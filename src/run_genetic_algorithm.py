@@ -118,10 +118,10 @@ def main():
     fitness_fn = load_fitness_function(nodes=nodes)
 
     # Run GA
-    print(f"\nRunning GA (100 generations, pop=50)...")
+    ga = GeneticAlgorithm(nodes)
+    print(f"\nRunning GA (Pop: {ga.pop_size}, Mutation: {ga.mutation_rate})...")
     start_time = time.time()
 
-    ga = GeneticAlgorithm(nodes)
     best_genome = ga.run(fitness_fn, generations=100, verbose=True)
 
     elapsed = time.time() - start_time

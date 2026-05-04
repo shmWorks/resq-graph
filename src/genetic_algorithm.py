@@ -8,9 +8,9 @@ from typing import List, Callable, Optional
 
 
 NUM_STATIONS = 5
-POPULATION_SIZE = 50
-MUTATION_RATE = 0.1
-GENERATIONS = 100
+POPULATION_SIZE = 100
+MUTATION_RATE = 0.2
+GENERATIONS = 150
 
 
 class GeneticAlgorithm:
@@ -62,33 +62,27 @@ class GeneticAlgorithm:
         return random.sample(self.nodes, self.num_stations)
 
     def select_parents(
-        self, fitnesses: List[float]
+        self, fitnesses: List[float], tournament_size: int = 3
     ) -> List[int]:
-        """Roulette wheel selection.
+        """Tournament selection.
 
         Args:
             fitnesses: List of fitness values (lower = better).
+            tournament_size: Number of individuals to compare.
 
         Returns:
             Selected genome.
         """
-        # Convert to maximization (higher = better)
-        max_fitness = max(fitnesses)
-        inverted = [max_fitness - f for f in fitnesses]
-
-        total = sum(inverted)
-        if total == 0:
-            return random.choice(self.population)
-
-        # Roulette wheel
-        pick = random.uniform(0, total)
-        cumulative = 0.0
-        for i, fitness in enumerate(inverted):
-            cumulative += fitness
-            if cumulative >= pick:
-                return self.population[i].copy()
-
-        return self.population[-1].copy()
+        # Pick random candidates
+        indices = random.sample(range(len(self.population)), tournament_size)
+        
+        # Return the best one (lowest fitness)
+        best_idx = indices[0]
+        for idx in indices[1:]:
+            if fitnesses[idx] < fitnesses[best_idx]:
+                best_idx = idx
+        
+        return self.population[best_idx].copy()
 
     def crossover(
         self, parent_a: List[int], parent_b: List[int]
@@ -160,23 +154,83 @@ class GeneticAlgorithm:
 
         return result
 
+    def _greedy_genome(self, distance_matrix: np.ndarray) -> List[int]:
+        """Construct a high-quality genome greedily in O(K*N).
+        
+        Args:
+            distance_matrix: (N, N) distance matrix.
+            
+        Returns:
+            A high-quality initial genome.
+        """
+        num_nodes = distance_matrix.shape[0]
+        # Start with the node that has the minimum total distance to all others (Medoid)
+        current_best_distances = np.full(num_nodes, np.inf)
+        selected_indices = []
+        
+        # Only consider reachable nodes from the mask if possible, 
+        # but for simplicity we'll use the whole matrix as it's pre-filtered.
+        
+        for _ in range(self.num_stations):
+            # For every node, calculate what the total distance would be if we added it
+            # total_dist(j) = sum(min(current_best_distances, dist_to_j))
+            potential_distances = np.minimum(current_best_distances[:, np.newaxis], distance_matrix)
+            total_potential_costs = np.sum(potential_distances, axis=0)
+            
+            # Avoid picking the same node twice
+            for idx in selected_indices:
+                total_potential_costs[idx] = np.inf
+                
+            best_node_idx = np.argmin(total_potential_costs)
+            selected_indices.append(best_node_idx)
+            current_best_distances = potential_distances[:, best_node_idx]
+            
+        return [self.nodes[i] for i in selected_indices]
+
+    def _local_search(self, genome: List[int], fitness_fn: Callable) -> List[int]:
+        """Hill climbing: try swapping each station with its neighbors or random nodes."""
+        best_genome = genome.copy()
+        best_fitness = fitness_fn(best_genome)
+        
+        improved = True
+        while improved:
+            improved = False
+            for i in range(len(best_genome)):
+                original_node = best_genome[i]
+                # Try a few random nodes to swap with (Stochastic Hill Climbing)
+                # In a graph, we'd try neighbors, but random works for facility location.
+                candidates = random.sample(self.nodes, 10) 
+                for candidate in candidates:
+                    if candidate in best_genome: continue
+                    
+                    best_genome[i] = candidate
+                    new_fitness = fitness_fn(best_genome)
+                    
+                    if new_fitness < best_fitness:
+                        best_fitness = new_fitness
+                        improved = True
+                        break # Found a better node for this slot
+                    else:
+                        best_genome[i] = original_node # Revert
+                if improved: break
+        return best_genome
+
     def run(
         self,
-        fitness_fn: Callable[[List[int]], float],
+        fitness_fn: Callable,
         generations: int = GENERATIONS,
         verbose: bool = True,
     ) -> List[int]:
-        """Run GA evolution.
-
-        Args:
-            fitness_fn: Function that takes genome returns fitness.
-            generations: Number of generations to run.
-            verbose: Print progress.
-
-        Returns:
-            Best genome found.
-        """
+        """Run GA evolution with Greedy Seeding and Local Search."""
         self.initialize_population()
+        
+        # --- ONE CHANGE: GREEDY SEEDING ---
+        # If the fitness_fn is an instance of FitnessFunction, we can use its matrix
+        if hasattr(fitness_fn, 'distance_matrix'):
+            greedy_individual = self._greedy_genome(fitness_fn.distance_matrix)
+            self.population[0] = greedy_individual
+            if verbose: print("Greedy seed injected into population.")
+        # ----------------------------------
 
         best_genome = None
         best_fitness = float('inf')
@@ -209,6 +263,10 @@ class GeneticAlgorithm:
 
                 child = self.crossover(parent_a, parent_b)
                 child = self.mutate(child)
+                
+                # Periodically apply Local Search to children (Memetic Algorithm)
+                if random.random() < 0.10: # 10% of children get "smarter"
+                    child = self._local_search(child, fitness_fn)
 
                 new_population.append(child)
 
