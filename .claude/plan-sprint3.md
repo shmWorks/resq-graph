@@ -76,24 +76,24 @@
 
 ## Deliverables
 
-| File | Description |
-|------|-------------|
-| src/genetic_algorithm.py | GA class with population, selection, crossover, mutation |
-| src/fitness.py | Fitness function using distance matrix |
-| src/run_genetic_algorithm.py | CLI entry point with profiling hooks |
-| src/tests/test_genetic_algorithm.py | Unit tests |
-| src/tests/test_integration.py | Integration tests |
-| src/tests/test_system.py | System/performance tests |
-| outputs/convergence_plot.png | Generation vs. best fitness chart |
-| outputs/optimal_stations.png | Map with optimal + random station comparison |
-| outputs/optimal_stations.json | 5 optimal node IDs exported for Sprint 4 |
+| File                                | Description                                              |
+| ----------------------------------- | -------------------------------------------------------- |
+| src/genetic_algorithm.py            | GA class with population, selection, crossover, mutation |
+| src/fitness.py                      | Fitness function using distance matrix                   |
+| src/run_genetic_algorithm.py        | CLI entry point with profiling hooks                     |
+| src/tests/test_genetic_algorithm.py | Unit tests                                               |
+| src/tests/test_integration.py       | Integration tests                                        |
+| src/tests/test_system.py            | System/performance tests                                 |
+| outputs/convergence_plot.png        | Generation vs. best fitness chart                        |
+| outputs/optimal_stations.png        | Map with optimal + random station comparison             |
+| outputs/optimal_stations.json       | 5 optimal node IDs exported for Sprint 4                 |
 
 ---
 
 ## Success Criteria
 
 - [ ] GA implemented from scratch — no scipy.optimize or sklearn
-- [ ] Fitness function uses distance matrix (not live A* calls)
+- [ ] Fitness function uses distance matrix (not live A\* calls)
 - [ ] Convergence plot shows clear improvement over generations
 - [ ] Optimal stations visually better distributed than random placement
 - [ ] All output files committed to version control
@@ -115,12 +115,12 @@ from genetic_algorithm import GeneticAlgorithm, Genome
 
 class TestGenomeRepresentation:
     """Genome structure validation."""
-    
+
     def test_no_duplicate_nodes(self):
         """Genome must not contain duplicate node IDs."""
         genome = [1, 2, 3, 4, 5]
         assert len(genome) == len(set(genome))
-    
+
     def test_length_equals_num_stations(self):
         """Genome length must match NUM_STATIONS."""
         genome = [0] * 5
@@ -129,11 +129,11 @@ class TestGenomeRepresentation:
 
 class TestSelection:
     """Selection operator tests."""
-    
+
     def test_roulette_wheel_returns_valid_genome(self):
         """Selection must return valid genome from population."""
         # ...
-    
+
     def test_fitter_genomes_selected_more_often(self):
         """Higher fitness = higher selection probability."""
         #
@@ -141,11 +141,11 @@ class TestSelection:
 
 class TestCrossover:
     """Crossover operator tests."""
-    
+
     def test_offspring_has_valid_length(self):
         """Offspring length equals parent length."""
         # ...
-    
+
     def test_no_duplicate_nodes_in_offspring(self):
         """Crossover must not create duplicates."""
         #
@@ -153,11 +153,11 @@ class TestCrossover:
 
 class TestMutation:
     """Mutation operator tests."""
-    
+
     def test_mutated_genome_stays_in_bounds(self):
         """Mutated node ID must exist in graph."""
         # ...
-    
+
     def test_mutation_rate_respected(self):
         """Only one position mutates per call."""
         #
@@ -172,7 +172,7 @@ from genetic_algorithm import run_genetic_algorithm
 
 def test_ga_converges_over_generations():
     """Fitness improves or stays same over generations.
-    
+
     Hoare's Maxim: "Premature optimization is the root of all evil"
     → Profile first, optimize only if needed.
     """
@@ -182,7 +182,7 @@ def test_ga_converges_over_generations():
 
 def test_fitness_uses_distance_matrix():
     """Verify O(1) lookup, not live A* calls.
-    
+
     SOLID: Interface Segregation - fitness function depends only on
     distance matrix abstraction, not A* implementation.
     """
@@ -200,7 +200,7 @@ import os
 
 def test_full_pipeline_execution_time():
     """End-to-end execution < 2 minutes.
-    
+
     Performance requirement from checklist.
     """
     start = time.time()
@@ -231,9 +231,9 @@ def profile_fitness_evaluation():
     """Profile fitness calculation hot path."""
     pr = cProfile.Profile()
     pr.enable()
-    
+
     # ... run GA ...
-    
+
     pr.disable()
     stats = pstats.Stats(pr)
     stats.sort_stats('cumulative').print(20)
@@ -241,6 +241,7 @@ def profile_fitness_evaluation():
 ```
 
 **Profiling workflow:**
+
 1. Run with `cProfile` to identify bottlenecks
 2. If time > 2min: optimize fitness vectorization
 3. Run with `memory_profiler` if memory > 500MB
@@ -252,16 +253,17 @@ def profile_fitness_evaluation():
 
 ### Analysis of Options
 
-| Approach | Time Complexity | Space | Complexity | Notes |
-|----------|----------------|-------|------------|-------|
-| A) Large penalty (10× max) | O(N) per fitness | O(1) | Low | Adds per-gen overhead |
-| B) Filter unreachable nodes | O(N) filter each gen | O(N) mask | Low | Changes fitness landscape |
-| C) Skip + assign inf | O(N) check | O(1) | Low | Simple but repeated checks |
-| **D) Pre-compute mask at init** | **O(1) check per fitness** | **O(N)** | **Low** | **Lowest time cost** |
+| Approach                        | Time Complexity            | Space     | Complexity | Notes                      |
+| ------------------------------- | -------------------------- | --------- | ---------- | -------------------------- |
+| A) Large penalty (10× max)      | O(N) per fitness           | O(1)      | Low        | Adds per-gen overhead      |
+| B) Filter unreachable nodes     | O(N) filter each gen       | O(N) mask | Low        | Changes fitness landscape  |
+| C) Skip + assign inf            | O(N) check                 | O(1)      | Low        | Simple but repeated checks |
+| **D) Pre-compute mask at init** | **O(1) check per fitness** | **O(N)**  | **Low**    | **Lowest time cost**       |
 
 ### Selected: Option D — Pre-compute Reachable Mask at Init
 
 **Rationale:**
+
 - **Time:** O(1) boolean array lookup in hot loop (fitness evaluation runs 50×100 = 5000 times)
 - **Space:** ~50 bytes for Model Town (50-node boolean array)
 - **KISS:** Simple bitmask, no complex logic in critical path
@@ -274,13 +276,13 @@ import numpy as np
 
 def compute_reachable_mask(distance_matrix: np.ndarray) -> np.ndarray:
     """Compute boolean mask of reachable nodes.
-    
+
     A node is reachable if it can be reached from OR can reach
     at least one other node in the graph.
-    
+
     Args:
         distance_matrix: (N, N) matrix from distance_matrix.npy
-        
+
     Returns:
         Boolean mask where True = node is reachable
     """
@@ -297,39 +299,40 @@ def calculate_fitness(
     reachable_mask: np.ndarray
 ) -> float:
     """Calculate fitness: sum of distances to nearest base.
-    
+
     Uses vectorized numpy operations for O(N) instead of O(N×B).
     Only considers reachable nodes in fitness calculation.
-    
+
     Args:
         genome: List of 5 node IDs (ambulance bases)
         distance_matrix: Precomputed (N, N) distance matrix
         node_index: Mapping from node ID to matrix index
         reachable_mask: Precomputed boolean mask
-        
+
     Returns:
         Fitness score (lower = better for minimization)
     """
     # Convert genome to indices once
     base_indices = np.array([node_index[n] for n in genome])
-    
+
     # Get reachable node indices
     reachable_indices = np.where(reachable_mask)[0]
-    
+
     # Vectorized: distances from all nodes to all bases
     # Shape: (num_reachable_nodes, num_bases)
     distances = distance_matrix[reachable_indices][:, base_indices]
-    
+
     # Nearest base for each reachable node
     min_distances = np.min(distances, axis=1)
-    
+
     # Handle any remaining inf (shouldn't happen with good mask)
     min_distances = np.where(np.isinf(min_distances), 0, min_distances)
-    
+
     return float(np.sum(min_distances))
 ```
 
 **Performance optimizations applied:**
+
 - Single array conversion for genome → indices
 - `np.where(reachable_mask)[0]` — O(N) once, not per-call
 - Vectorized `min(axis=1)` — O(N×B) → O(N) with numpy
@@ -355,6 +358,7 @@ src/
 ```
 
 **SOLID principles applied:**
+
 - **S**ingle Responsibility: Each module has one reason to change
 - **O**pen/Closed: GA operators extendable without modification
 - **L**iskov Substitution: Fitness function contract is clear
