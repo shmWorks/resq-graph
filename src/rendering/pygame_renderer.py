@@ -1,13 +1,21 @@
 """
-pygame_renderer.py – Sprint 5
+pygame_renderer.py – Sprint 6 & 7
 
-Rendering changes from Sprint 4:
-- Layer 2 (NEW): dashed ambulance path polylines.
-- Layer 4: HUD panel extended with ART, resolved count, fleet utilisation.
-- Layer 5 (NEW): semi-transparent metrics panel, toggled by M key.
+Rendering changes from Sprint 5:
+- Layer 1 (NEW): Congestion heatmap cached Surface (Sprint 7, US-025, T key).
+- Layer 3 (NEW): Hotspot convex hulls (translucent, Sprint 6, US-024).
+- Layer 4 (NEW): Hotspot pulsing circles at centroids (Sprint 6, US-024, H key).
+- Layer 7 (NEW): HUD log strip – last 5 events (Sprint 7, US-028).
+- Layer 8 (NEW): Full log history overlay toggled by L key (Sprint 7, US-028).
+- Ambulance colour now covers REBALANCING state (Sprint 6).
 
-draw() signature updated: draw(state, ambulances, dispatcher, show_metrics_panel).
+draw() signature updated:
+    draw(state, ambulances, dispatcher,
+         show_metrics_panel, show_hotspots, show_traffic, show_log,
+         log_buffer, current_tick)
 """
+from __future__ import annotations
+
 import math
 import pygame
 
@@ -28,18 +36,45 @@ from src.config import (
 )
 from src.simulation.ambulance import AmbulanceState
 
+# Sprint 6/7 colour additions
+COLOUR_REBALANCING  = (100, 100, 255)   # blue – rebalancing ambulance
+COLOUR_HOTSPOT_FILL = (0,   120, 255,  40)   # translucent blue hull fill
+COLOUR_HOTSPOT_LINE = (0,   160, 255, 180)   # hull outline
+COLOUR_TRAFFIC_FREE = (0,   200,   0)        # free-flow green
+COLOUR_TRAFFIC_MED  = (255, 200,   0)        # mid congestion yellow
+COLOUR_TRAFFIC_JAM  = (220,  30,  30)        # heavy congestion red
+LOG_STRIP_BG        = (10,  10,  10, 200)    # dark semi-transparent
+
+
+def _lerp_colour(c1: tuple, c2: tuple, t: float) -> tuple:
+    """Linear interpolate between two RGB colours."""
+    return tuple(int(c1[i] + (c2[i] - c1[i]) * t) for i in range(3))
+
+
+def _congestion_colour(multiplier: float, max_mult: float = 2.5) -> tuple:
+    """Map a congestion multiplier to an RGB colour (green → yellow → red)."""
+    t = max(0.0, min(1.0, (multiplier - 1.0) / (max_mult - 1.0)))
+    if t < 0.5:
+        return _lerp_colour(COLOUR_TRAFFIC_FREE, COLOUR_TRAFFIC_MED, t * 2)
+    return _lerp_colour(COLOUR_TRAFFIC_MED, COLOUR_TRAFFIC_JAM, (t - 0.5) * 2)
+
 
 class PygameRenderer:
     """Renders the simulation to a Pygame surface.
 
-    Layer order
-    -----------
-    0  Background map
-    1  Accident markers (red X)
-    2  Ambulance path polylines (dashed blue)   ← Sprint 5 NEW
-    3  Ambulance sprites (coloured circles)
-    4  HUD panel (top-right)
-    5  Metrics panel overlay (M key)             ← Sprint 5 NEW
+    Layer order (Sprint 6/7)
+    ------------------------
+    0  Background map              (static blit)
+    1  Congestion heatmap          (cached Surface, T key)
+    2  Accident markers            (red X)
+    3  Hotspot convex hulls        (translucent, H key)
+    4  Hotspot pulsing circles     (H key)
+    5  Ambulance path polylines    (dashed blue)
+    6  Ambulance sprites
+    7  HUD panel                   (top-right)
+    8  Metrics panel overlay       (M key)
+    9  Log strip                   (bottom of screen)
+   10  Log history overlay         (L key)
     """
 
     def __init__(self, screen: pygame.Surface, node_positions: dict):
@@ -59,14 +94,26 @@ class PygameRenderer:
         self.font_small  = pygame.font.SysFont("monospace", 14)
         self.font_title  = pygame.font.SysFont("monospace", 16, bold=True)
 
+        # ── Sprint 7: cached traffic heatmap surface ───────────────────────
+        self._traffic_cache:        pygame.Surface | None = None
+        self._traffic_cache_dirty:  bool = True
+
+        # ── Sprint 6: pulse animation state ───────────────────────────────
+        self._pulse_tick = 0
+
     # ── Public draw entry point ────────────────────────────────────────────────
 
     def draw(
         self,
         state,
-        ambulances:         list,
-        dispatcher          = None,
-        show_metrics_panel: bool = False,
+        ambulances:          list,
+        dispatcher           = None,
+        show_metrics_panel:  bool = False,
+        show_hotspots:       bool = True,
+        show_traffic:        bool = True,
+        show_log:            bool = False,
+        log_buffer           = None,
+        current_tick:        int  = 0,
     ) -> None:
         """Render one frame.
 
@@ -74,59 +121,200 @@ class PygameRenderer:
         ----------
         state               SimulationState (tick, paused flag).
         ambulances          All Ambulance objects.
-        dispatcher          DispatcherBrain – provides active_events and metrics.
+        dispatcher          DispatcherBrain – provides active_events, hotspots, metrics.
         show_metrics_panel  Whether to draw the detailed M-key overlay.
+        show_hotspots       H key: show/hide hotspot layer.
+        show_traffic        T key: show/hide congestion heatmap.
+        show_log            L key: expand/collapse full log history overlay.
+        log_buffer          SimLogBuffer – for on-screen log strip.
+        current_tick        Used for pulsing animation.
         """
         active_events = dispatcher.active_events if dispatcher else []
         hud_data      = (
             dispatcher.metrics_tracker.get_hud_data() if dispatcher else {}
         )
+        traffic   = getattr(dispatcher, "traffic", None) if dispatcher else None
+        hotspots  = getattr(dispatcher, "hotspots", []) if dispatcher else []
         idle_count = sum(1 for a in ambulances if a.state == AmbulanceState.IDLE)
+        self._pulse_tick = current_tick
 
-        # Layer 0: Background
+        # ── Layer 0: Background ────────────────────────────────────────────
         self.screen.fill((26, 26, 46))
         self.screen.blit(self.background, (self.padding, self.padding))
 
-        # Layer 1: Accident markers
+        # ── Layer 1: Congestion heatmap ────────────────────────────────────
+        if show_traffic and traffic is not None:
+            self._draw_traffic_heatmap(traffic)
+
+        # ── Layer 2: Accident markers ──────────────────────────────────────
         for event in active_events:
             self._draw_accident(event.pixel_pos)
 
-        # Layer 2: Ambulance path polylines (Sprint 5)
+        # ── Layer 3 & 4: Hotspot overlays ─────────────────────────────────
+        if show_hotspots and hotspots:
+            self._draw_hotspot_hulls(hotspots)
+            self._draw_hotspot_circles(hotspots, current_tick)
+
+        # ── Layer 5: Ambulance path polylines ─────────────────────────────
         self.draw_ambulance_paths(ambulances)
 
-        # Layer 3: Ambulance sprites
+        # ── Layer 6: Ambulance sprites ────────────────────────────────────
         for amb in ambulances:
             self._draw_ambulance(amb)
 
-        # Layer 4: HUD
-        self._draw_hud(state, ambulances, idle_count, hud_data)
+        # ── Layer 7: HUD panel ─────────────────────────────────────────────
+        self._draw_hud(state, ambulances, idle_count, hud_data, show_hotspots, show_traffic)
 
-        # Layer 5: Metrics panel (Sprint 5)
+        # ── Layer 8: Metrics panel overlay ────────────────────────────────
         if show_metrics_panel:
             self.draw_metrics_panel(hud_data, len(active_events))
 
+        # ── Layer 9: Log strip ─────────────────────────────────────────────
+        if log_buffer is not None:
+            self._draw_log_strip(log_buffer)
+
+        # ── Layer 10: Full log history overlay ────────────────────────────
+        if show_log and log_buffer is not None:
+            self._draw_log_history(log_buffer)
+
         pygame.display.flip()
 
-    # ── Layer 1: Accidents ─────────────────────────────────────────────────────
+    # ── Layer 1: Traffic heatmap (US-025) ──────────────────────────────────────
+
+    def _draw_traffic_heatmap(self, traffic) -> None:
+        """Draw coloured road segments based on their congestion multiplier.
+
+        Uses a cached Surface that is rebuilt only when edges change weight.
+        The cache is invalidated externally by setting
+        ``renderer._traffic_cache_dirty = True`` after ``traffic.update()``.
+        """
+        # Rebuild cache if dirty or not yet created
+        if self._traffic_cache is None or self._traffic_cache_dirty:
+            cache = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            cache.fill((0, 0, 0, 0))
+
+            for key, mult in traffic.edge_multipliers.items():
+                nodes = list(key)
+                if len(nodes) != 2:
+                    continue
+                u, v = nodes[0], nodes[1]
+                pos_u = self.node_positions.get(u)
+                pos_v = self.node_positions.get(v)
+                if pos_u is None or pos_v is None:
+                    continue
+                colour = _congestion_colour(mult)
+                # Draw a thicker coloured line under the road
+                pygame.draw.line(
+                    cache, colour,
+                    (int(pos_u[0]), int(pos_u[1])),
+                    (int(pos_v[0]), int(pos_v[1])),
+                    4,
+                )
+            self._traffic_cache       = cache
+            self._traffic_cache_dirty = False
+
+        self.screen.blit(self._traffic_cache, (0, 0))
+
+    def invalidate_traffic_cache(self) -> None:
+        """Call this after traffic.update() to force a heatmap redraw."""
+        self._traffic_cache_dirty = True
+
+    # ── Layer 3: Hotspot convex hulls (US-024) ─────────────────────────────────
+
+    def _draw_hotspot_hulls(self, hotspots: list) -> None:
+        """Draw a translucent convex hull polygon around each hotspot cluster."""
+        for hs in hotspots:
+            pts = hs.member_pixel_positions
+            if len(pts) < 3:
+                # Too few points for a proper hull: draw a circle instead
+                if pts:
+                    cx, cy = pts[0]
+                    surf = pygame.Surface((60, 60), pygame.SRCALPHA)
+                    pygame.draw.circle(surf, COLOUR_HOTSPOT_FILL, (30, 30), 30)
+                    self.screen.blit(surf, (cx - 30, cy - 30))
+                continue
+
+            hull = self._convex_hull(pts)
+            if len(hull) < 3:
+                continue
+
+            # Draw filled polygon on alpha surface
+            hull_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            pygame.draw.polygon(hull_surf, COLOUR_HOTSPOT_FILL, hull)
+            pygame.draw.polygon(hull_surf, COLOUR_HOTSPOT_LINE, hull, 2)
+            self.screen.blit(hull_surf, (0, 0))
+
+    @staticmethod
+    def _convex_hull(points: list[tuple]) -> list[tuple]:
+        """Graham scan convex hull over a list of (x, y) integer tuples."""
+        pts = sorted(set(points))
+        if len(pts) <= 1:
+            return pts
+
+        def cross(o, a, b):
+            return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+        lower: list = []
+        for p in pts:
+            while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+                lower.pop()
+            lower.append(p)
+        upper: list = []
+        for p in reversed(pts):
+            while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+                upper.pop()
+            upper.append(p)
+        return lower[:-1] + upper[:-1]
+
+    # ── Layer 4: Hotspot pulsing circles (US-024) ──────────────────────────────
+
+    def _draw_hotspot_circles(self, hotspots: list, tick: int) -> None:
+        """Draw animated pulsing blue circles at hotspot centroids."""
+        pulse = abs(math.sin(tick * 0.05))   # 0.0 → 1.0 oscillation
+        radius = int(10 + pulse * 8)
+
+        for hs in hotspots:
+            cx, cy = hs.pixel_pos
+            # Outer glow ring
+            pygame.draw.circle(
+                self.screen,
+                (50, 130, 255, 120),
+                (cx, cy),
+                radius + 6,
+                2,
+            )
+            # Solid centre
+            pygame.draw.circle(self.screen, (80, 160, 255), (cx, cy), radius)
+            pygame.draw.circle(self.screen, (200, 230, 255), (cx, cy), radius, 2)
+
+            # Cluster-size label
+            lbl = self.font_small.render(f"H{hs.cluster_id}:{hs.size}", True, (255, 255, 255))
+            self.screen.blit(lbl, (cx + radius + 4, cy - 8))
+
+    # ── Layer 2: Accidents ─────────────────────────────────────────────────────
 
     def _draw_accident(self, pixel_pos: tuple) -> None:
         x, y = int(pixel_pos[0]), int(pixel_pos[1])
         pygame.draw.line(self.screen, COLOUR_ACCIDENT, (x-6, y-6), (x+6, y+6), 2)
         pygame.draw.line(self.screen, COLOUR_ACCIDENT, (x-6, y+6), (x+6, y-6), 2)
 
-    # ── Layer 2: Dashed path polylines (Sprint 5) ──────────────────────────────
+    # ── Layer 5: Dashed path polylines ────────────────────────────────────────
 
     def draw_ambulance_paths(self, ambulances: list) -> None:
-        """Draw dashed path polylines for all IN_TRANSIT ambulances."""
+        """Draw dashed path polylines for all IN_TRANSIT / REBALANCING ambulances."""
         for amb in ambulances:
             if not amb.pixel_polyline or amb.state == AmbulanceState.IDLE:
                 continue
-            self._draw_dashed_polyline(self.screen, DASHED_LINE_COLOUR, amb.pixel_polyline)
+            colour = (
+                COLOUR_REBALANCING
+                if amb.state == AmbulanceState.REBALANCING
+                else DASHED_LINE_COLOUR
+            )
+            self._draw_dashed_polyline(self.screen, colour, amb.pixel_polyline)
 
     def _draw_dashed_polyline(
         self, surface: pygame.Surface, colour: tuple, points: list[tuple]
     ) -> None:
-        """Draw a multi-segment dashed line through a sequence of (x, y) points."""
         for i in range(len(points) - 1):
             self._draw_dashed_segment(surface, colour, points[i], points[i + 1])
 
@@ -137,10 +325,6 @@ class PygameRenderer:
         p1:      tuple,
         p2:      tuple,
     ) -> None:
-        """Interpolate dashes between two points.
-
-        Dashes are DASHED_SEGMENT_LEN px; gaps are DASHED_GAP_LEN px.
-        """
         dx, dy = p2[0] - p1[0], p2[1] - p1[1]
         length = math.hypot(dx, dy)
         if length == 0:
@@ -158,7 +342,7 @@ class PygameRenderer:
             pos  += step
             draw  = not draw
 
-    # ── Layer 3: Ambulances ────────────────────────────────────────────────────
+    # ── Layer 6: Ambulances ────────────────────────────────────────────────────
 
     def _draw_ambulance(self, amb) -> None:
         x, y = int(amb.pixel_pos[0]), int(amb.pixel_pos[1])
@@ -166,56 +350,63 @@ class PygameRenderer:
             colour = COLOUR_IDLE
         elif amb.state == AmbulanceState.IN_TRANSIT:
             colour = COLOUR_TRANSIT
+        elif amb.state == AmbulanceState.REBALANCING:
+            colour = COLOUR_REBALANCING
         else:
             colour = COLOUR_ON_SCENE
         pygame.draw.circle(self.screen, colour, (x, y), 8)
-        pygame.draw.circle(self.screen, (0, 0, 0), (x, y), 8, 1)  # outline
-        # Draw ambulance ID label
+        pygame.draw.circle(self.screen, (0, 0, 0), (x, y), 8, 1)
         label = self.font_small.render(str(amb.id), True, (255, 255, 255))
         self.screen.blit(label, (x + 10, y - 8))
 
-    # ── Layer 4: HUD panel ─────────────────────────────────────────────────────
+    # ── Layer 7: HUD panel ─────────────────────────────────────────────────────
 
     def _draw_hud(
-        self, state, ambulances: list, idle_count: int, hud_data: dict
+        self,
+        state,
+        ambulances:    list,
+        idle_count:    int,
+        hud_data:      dict,
+        show_hotspots: bool = True,
+        show_traffic:  bool = True,
     ) -> None:
-        art          = hud_data.get("art", 0.0)
+        art         = hud_data.get("art", 0.0)
         total_events = hud_data.get("total_events", 0)
-        utilisation  = (
+        utilisation = (
             round((1 - idle_count / max(len(ambulances), 1)) * 100)
             if ambulances else 0
         )
 
-        hud_w, hud_h = 270, 175
+        hud_w, hud_h = 290, 220
         hud_surf     = pygame.Surface((hud_w, hud_h), pygame.SRCALPHA)
         hud_surf.fill((*HUD_BG_COLOUR, 200))
 
         lines = [
             f"Tick:              {state.current_tick}",
-            f"Active Events:     {len(getattr(state, 'active_events', []))}",   # compat
+            f"Active Events:     {len(getattr(state, 'active_events', []))}",
             f"Idle Ambulances:   {idle_count} / {len(ambulances)}",
-            f"Avg Response Time: {art:.1f} ticks",       # ← Sprint 5 NEW
-            f"Events Resolved:   {total_events}",        # ← Sprint 5 NEW
-            f"Fleet Utilisation: {utilisation}%",        # ← Sprint 5 NEW
+            f"Avg Response Time: {art:.1f} ticks",
+            f"Events Resolved:   {total_events}",
+            f"Fleet Utilisation: {utilisation}%",
+            "",
+            f"  [H] Hotspots: {'ON ' if show_hotspots else 'OFF'}",
+            f"  [T] Traffic:  {'ON ' if show_traffic  else 'OFF'}",
+            f"  [M] Metrics   [L] Log",
         ]
         if state.paused:
-            lines.append("")
-            lines.append("  [ ⏸  PAUSED ]")
-        if not hud_data:
-            lines.append("  [ M ] Metrics panel")
+            lines.insert(0, "  [ ⏸  PAUSED ]")
 
         y_off = 10
         for line in lines:
             surf = self.font.render(line, True, HUD_TEXT_COLOUR)
             hud_surf.blit(surf, (12, y_off))
-            y_off += 22
+            y_off += 20
 
         self.screen.blit(hud_surf, (WINDOW_WIDTH - hud_w - 10, 10))
 
-    # ── Layer 5: Metrics panel (Sprint 5) ─────────────────────────────────────
+    # ── Layer 8: Metrics panel ─────────────────────────────────────────────────
 
     def draw_metrics_panel(self, hud_data: dict, active_count: int = 0) -> None:
-        """Draw the semi-transparent detailed metrics overlay (toggled by M key)."""
         pw = METRICS_PANEL_WIDTH
         ph = METRICS_PANEL_HEIGHT
         px = (WINDOW_WIDTH  - pw) // 2
@@ -224,11 +415,8 @@ class PygameRenderer:
         panel = pygame.Surface((pw, ph), pygame.SRCALPHA)
         panel.fill((20, 20, 20, 210))
 
-        # Title
         title = self.font_title.render("  METRICS PANEL  [ M to close ]", True, (180, 220, 255))
         panel.blit(title, (10, 8))
-
-        # Divider
         pygame.draw.line(panel, (80, 80, 80), (10, 28), (pw - 10, 28), 1)
 
         art          = hud_data.get("art",          0.0)
@@ -251,13 +439,56 @@ class PygameRenderer:
         ]
 
         y = 38
-        label_colour = (200, 200, 200)
-        value_colour = (255, 255, 100)
         for label, value in rows:
-            lbl_surf = self.font_small.render(f"  {label}:", True, label_colour)
-            val_surf = self.font_small.render(value,          True, value_colour)
+            lbl_surf = self.font_small.render(f"  {label}:", True, (200, 200, 200))
+            val_surf = self.font_small.render(value,          True, (255, 255, 100))
             panel.blit(lbl_surf, (10, y))
             panel.blit(val_surf, (pw - val_surf.get_width() - 10, y))
             y += 19
 
         self.screen.blit(panel, (px, py))
+
+    # ── Layer 9: Log strip (US-028) ────────────────────────────────────────────
+
+    def _draw_log_strip(self, log_buffer) -> None:
+        """Draw last 5 log lines at the bottom of the screen."""
+        lines = log_buffer.tail(5)
+        if not lines:
+            return
+
+        strip_h = len(lines) * 18 + 8
+        strip_y = WINDOW_HEIGHT - strip_h - 4
+
+        strip = pygame.Surface((WINDOW_WIDTH, strip_h), pygame.SRCALPHA)
+        strip.fill(LOG_STRIP_BG)
+
+        for i, line in enumerate(lines):
+            surf = self.font_small.render(line[:120], True, (180, 220, 180))
+            strip.blit(surf, (8, 4 + i * 18))
+
+        self.screen.blit(strip, (0, strip_y))
+
+    # ── Layer 10: Full log history overlay (US-028) ────────────────────────────
+
+    def _draw_log_history(self, log_buffer) -> None:
+        """Full-screen semi-transparent log overlay (toggled by L key)."""
+        all_lines = log_buffer.all()
+        # Show the most recent lines that fit
+        max_visible = (WINDOW_HEIGHT - 60) // 17
+        visible = all_lines[-max_visible:] if len(all_lines) > max_visible else all_lines
+
+        ow, oh = WINDOW_WIDTH - 60, WINDOW_HEIGHT - 60
+        overlay = pygame.Surface((ow, oh), pygame.SRCALPHA)
+        overlay.fill((10, 10, 10, 220))
+
+        title = self.font_title.render(
+            "  SIMULATION LOG  [ L to close ]", True, (180, 220, 255)
+        )
+        overlay.blit(title, (10, 8))
+        pygame.draw.line(overlay, (80, 80, 80), (10, 28), (ow - 10, 28), 1)
+
+        for i, line in enumerate(visible):
+            surf = self.font_small.render(line[:110], True, (200, 220, 200))
+            overlay.blit(surf, (10, 34 + i * 17))
+
+        self.screen.blit(overlay, (30, 30))

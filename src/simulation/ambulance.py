@@ -4,9 +4,10 @@ from typing import Optional
 from src.astar import astar
 
 class AmbulanceState(Enum):
-    IDLE       = "IDLE"
-    IN_TRANSIT = "IN_TRANSIT"
-    ON_SCENE   = "ON_SCENE"
+    IDLE         = "IDLE"
+    IN_TRANSIT   = "IN_TRANSIT"
+    ON_SCENE     = "ON_SCENE"
+    REBALANCING  = "REBALANCING"   # Sprint 6: moving toward a hotspot centroid
 
 class Ambulance:
     def __init__(self, id: int, start_node: int, graph):
@@ -22,8 +23,18 @@ class Ambulance:
         # Sprint 5 fields
         self.pixel_polyline: list[tuple[int, int]] = []   # pre-computed by dispatcher
         self.dispatch_tick: Optional[int] = None          # tick when assigned
+        # Sprint 6 fields
+        self.rebalance_target: Optional[int] = None       # hotspot centroid node
+        # Sprint 7 fields
+        self.reroute_check_tick: int = 0                  # last tick a re-route check ran
+        self.path_weight_at_dispatch: float = 0.0         # total weight when path was set
 
-    def navigate(self, destination: int, path: Optional[list] = None) -> None:
+    def navigate(
+        self,
+        destination: int,
+        path: Optional[list] = None,
+        rebalancing: bool = False,
+    ) -> None:
         """Set navigation state toward destination.
 
         Parameters
@@ -34,17 +45,21 @@ class Ambulance:
             Pre-computed A* path (list of node IDs).  When supplied by the
             DispatcherBrain the path is used directly, avoiding a duplicate
             A* call.  If omitted the ambulance computes its own path.
+        rebalancing : bool
+            When *True* the ambulance enters ``REBALANCING`` state instead of
+            ``IN_TRANSIT``.  On arrival it returns to ``IDLE`` rather than
+            ``ON_SCENE``.
         """
         if path is None:
             path = astar(self.graph, self.current_location, destination)
         if path:
             self.current_path = path
-            self.state = AmbulanceState.IN_TRANSIT
+            self.state = AmbulanceState.REBALANCING if rebalancing else AmbulanceState.IN_TRANSIT
             self.progress = 0.0
         else:
             # Fallback: straight two-node path
             self.current_path = [self.current_location, destination]
-            self.state = AmbulanceState.IN_TRANSIT
+            self.state = AmbulanceState.REBALANCING if rebalancing else AmbulanceState.IN_TRANSIT
             self.progress = 0.0
 
     def update_position(self, node_positions: dict) -> None:
@@ -55,9 +70,15 @@ class Ambulance:
                 self.pixel_pos = (float(pos[0]), float(pos[1]))
             return
 
-        if self.state == AmbulanceState.IN_TRANSIT:
+        # Both IN_TRANSIT and REBALANCING use the same movement logic;
+        # only the arrival state differs.
+        is_rebalancing = (self.state == AmbulanceState.REBALANCING)
+
+        if self.state in (AmbulanceState.IN_TRANSIT, AmbulanceState.REBALANCING):
             if not self.current_path:
-                self.state = AmbulanceState.ON_SCENE
+                self.state = AmbulanceState.IDLE if is_rebalancing else AmbulanceState.ON_SCENE
+                if is_rebalancing:
+                    self.rebalance_target = None
                 return
 
             if len(self.current_path) == 1:
@@ -65,7 +86,9 @@ class Ambulance:
                 pos = node_positions[self.current_location]
                 self.pixel_pos = (float(pos[0]), float(pos[1]))
                 self.current_path.pop(0)
-                self.state = AmbulanceState.ON_SCENE
+                self.state = AmbulanceState.IDLE if is_rebalancing else AmbulanceState.ON_SCENE
+                if is_rebalancing:
+                    self.rebalance_target = None
                 self.progress = 0.0
                 return
 
@@ -84,7 +107,9 @@ class Ambulance:
                 pos = node_positions[self.current_location]
                 self.pixel_pos = (float(pos[0]), float(pos[1]))
                 self.current_path.pop(0)
-                self.state = AmbulanceState.ON_SCENE
+                self.state = AmbulanceState.IDLE if is_rebalancing else AmbulanceState.ON_SCENE
+                if is_rebalancing:
+                    self.rebalance_target = None
                 self.progress = 0.0
                 return
 
@@ -114,12 +139,15 @@ class Ambulance:
         }
 
     def complete_task(self) -> None:
-        """Reset ambulance to IDLE.  Called by dispatcher; also clears Sprint 5 fields."""
+        """Reset ambulance to IDLE.  Called by dispatcher; also clears Sprint 5/6/7 fields."""
         if self.assigned_task:
             self.assigned_task.resolved = True
-        self.assigned_task   = None
-        self.current_path    = []
-        self.pixel_polyline  = []   # Sprint 5: clear cached path for renderer
-        self.dispatch_tick   = None # Sprint 5
-        self.state           = AmbulanceState.IDLE
-        self.progress        = 0.0
+        self.assigned_task          = None
+        self.current_path           = []
+        self.pixel_polyline         = []    # Sprint 5
+        self.dispatch_tick          = None  # Sprint 5
+        self.rebalance_target       = None  # Sprint 6
+        self.reroute_check_tick     = 0     # Sprint 7
+        self.path_weight_at_dispatch = 0.0  # Sprint 7
+        self.state                  = AmbulanceState.IDLE
+        self.progress               = 0.0

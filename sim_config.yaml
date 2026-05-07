@@ -1,0 +1,52 @@
+# sim_config.yaml – Sprint 7 (US-027)
+# Simulation Parameter Configuration
+#
+# Top-level keys set default values.  Any profile listed under "profiles:"
+# overrides only the keys it explicitly declares, following the same
+# deep-merge semantics as Python's dict.update().
+
+# ── Display ────────────────────────────────────────────────────────────────────
+SCREEN_W: 1200
+SCREEN_H: 900
+TARGET_FPS: 30
+
+# ── Simulation ─────────────────────────────────────────────────────────────────
+NUM_AMBULANCES: 5
+SIMULATION_TICKS: 10000
+POISSON_LAMBDA: 0.05
+SCENE_SERVICE_TICKS: 10
+REBALANCE_INTERVAL: 50
+REROUTE_CHECK_INTERVAL: 10   # ticks between re-route checks (US-026)
+REROUTE_THRESHOLD: 0.20      # ≥20 % weight increase triggers re-route
+
+# ── Traffic (US-025) ───────────────────────────────────────────────────────────
+TRAFFIC_ENABLED: true
+CONGESTION_MAX_MULTIPLIER: 2.5
+CONGESTION_DECAY_RATE: 0.02  # weight decrement per tick towards 1.0
+
+# ── HDBSCAN (US-021/022) ───────────────────────────────────────────────────────
+HDBSCAN_MIN_CLUSTER_SIZE: 3
+HDBSCAN_MIN_SAMPLES: 2
+
+# ── Logging (US-028) ───────────────────────────────────────────────────────────
+LOG_LEVEL: "INFO"            # DEBUG | INFO | WARNING | ERROR
+LOG_FILE: "outputs/sim.log"
+LOG_STRIP_EVENTS: 5          # number of recent events shown in the on-screen strip
+
+# ── Profiles ───────────────────────────────────────────────────────────────────
+# A profile is selected at runtime via --profile <name>.
+# Each profile overrides only the keys it declares.
+profiles:
+  default: {}
+
+  headless:
+    TARGET_FPS: 0           # uncapped – no render delay in headless mode
+    SIMULATION_TICKS: 500   # shorter run for CI / automated tests
+    LOG_LEVEL: "DEBUG"
+
+  high_stress:
+    POISSON_LAMBDA: 0.15    # 3× accident rate
+    NUM_AMBULANCES: 8
+    HDBSCAN_MIN_CLUSTER_SIZE: 5
+    HDBSCAN_MIN_SAMPLES: 3
+    LOG_LEVEL: "WARNING"
