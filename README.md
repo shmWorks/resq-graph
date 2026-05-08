@@ -2,7 +2,7 @@
 
 ResQ-Graph is an agent-based graph simulation for emergency ambulance dispatch. It models a fleet of ambulances navigating a city road network (represented as a graph) to respond to dynamically generated emergency events. The project aims to simulate, visualize, and optimize response times using smart dispatch algorithms, dynamic fleet rebalancing, and realistic traffic models.
 
-This repository is currently up-to-date through **Sprint 7**.
+This repository is currently up-to-date through **Sprint 8**.
 
 ## Core Architecture & Components
 
@@ -37,12 +37,12 @@ Logs response times (Spawn Tick → Arrival Tick) for every event. It provides r
 ### 9. Visualization (`src/rendering/pygame_renderer.py`)
 A highly optimized Pygame visualizer that renders:
 - The static map background
-- Congestion heatmaps (Layered cached surface, `T` to toggle)
-- Hotspot pulsing circles and convex hulls (`H` to toggle)
-- Ambulance sprites (color-coded by state)
-- Emergency locations (Red Xs)
-- Dynamic dashed polylines representing active routes
-- A real-time HUD, a detailed metrics overlay (`M`), and a full log history (`L`)
+-- Congestion heatmaps (Layered cached surface, `T` to toggle)
+-- Hotspot pulsing circles and convex hulls (`H` to toggle)
+-- Ambulance sprites (color-coded by state)
+-- Emergency locations (Red Xs)
+-- Dynamic dashed polylines representing active routes
+-- A real-time HUD, a detailed metrics overlay (`M`), and a full log history (`L`)
 
 ---
 
@@ -55,11 +55,17 @@ resq-graph/
 │   ├── node_positions.json      # Pre-calculated pixel coordinates for nodes
 │   ├── map_bg.png               # Visual map background
 │   └── distance_matrix.npy      # Precomputed distance matrix (auto-generated)
-├── outputs/                     # Generated CSV metrics and logs go here
+├── outputs/                     # Generated CSV metrics, logs, and baseline results go here
+│   ├── figures/                 # Auto-generated matplotlib plots (Sprint 8)
+│   ├── baseline_results.csv     # Sprint 8: per-run baseline ART results
+│   ├── baseline_report.md       # Sprint 8: auto-generated analysis report
+│   └── random_fleet_log.json    # Sprint 8: placement log for reproducibility
 ├── src/
 │   ├── main.py                  # Entry point for the simulation
 │   ├── config.py                # Hyperparameters, paths, and visual constants
 │   ├── sim_config_loader.py     # YAML configuration parser
+│   ├── run_baseline.py          # Sprint 8: headless batch baseline runner
+│   ├── analyze_baseline.py      # Sprint 8: analysis & report generator
 │   ├── astar.py                 # Core A* navigation algorithm
 │   ├── distance_matrix.py       # Distance matrix computation script
 │   ├── intelligence/
@@ -67,18 +73,20 @@ resq-graph/
 │   │   └── demand_clustering.py # Hotspot detection logic
 │   ├── rendering/
 │   │   ├── pygame_renderer.py   # Pygame visualization logic
-│   │   └── visualizer.py        # Legacy matplotlib visualizer
+│   │   └── visualizer.py        # Matplotlib visualizer + Sprint 8 baseline plots
 │   └── simulation/
 │       ├── ambulance.py         # Ambulance class & state management
 │       ├── assignment.py        # O(1) assignment and tie-breaking logic
 │       ├── dispatcher.py        # Centralized dispatcher orchestrator
 │       ├── event_spawner.py     # Poisson emergency generation
 │       ├── metrics_tracker.py   # Data tracking & CSV export
+│       ├── random_fleet.py      # Sprint 8: random station placement generator
 │       ├── sim_logger.py        # Multi-level logging configuration
 │       ├── simulation_engine.py # Main tick loop
 │       └── traffic.py           # Dynamic traffic congestion model
 ├── tests/                       # Comprehensive Pytest test suite
-└── sim_config.yaml              # Centralized simulation parameter configuration
+├── sim_config.yaml              # Centralized simulation parameter configuration
+└── headless_baseline.yaml       # Sprint 8: reproducible headless batch config
 ```
 
 ## How to Run
@@ -95,6 +103,11 @@ python src/main.py
 - Press **T** to toggle the traffic congestion overlay.
 - Press **L** to toggle the full log history overlay.
 
+**Run headless (no window):**
+```bash
+python src/main.py --headless
+```
+
 **Run with specific profile:**
 You can modify `sim_config.yaml` to change parameters or run headless.
 
@@ -103,9 +116,45 @@ You can modify `sim_config.yaml` to change parameters or run headless.
 pytest tests/ -v
 ```
 
+---
+
+## Reproducing the Baseline (Sprint 8)
+
+1. Install dependencies into your virtual environment:
+```bash
+pip install -r requirements.txt
+```
+
+2. Run the baseline batch experiment (headless, 10 runs x 1000 ticks):
+```bash
+python src/run_baseline.py --headless --config headless_baseline.yaml
+```
+
+3. Analyze results and generate the report + figures:
+```bash
+python src/analyze_baseline.py
+```
+
+4. View the report:
+```
+outputs/baseline_report.md
+```
+
+Seeds are defined in `headless_baseline.yaml`:
+- `random_seed` — controls random fleet station placement
+- `event_seed` — controls Poisson event spawning
+- `ambulance_seed` — reserved for future randomized ambulance init
+
+Changing any seed will change results. The `random_fleet_log.json` file
+records every placement set for full reproducibility auditing.
+
+---
+
 ## AI Context Notes
 If you are an AI reading this to write future code for this project:
 - **Rendering:** `pygame_renderer.py` relies strictly on data passed to its `draw()` method. Do not put simulation state mutations inside the renderer.
 - **Distance Matrix:** Never bypass `assignment.py` for calculating proximity. Always use the distance matrix for O(1) lookups to keep the simulation performant, falling back to Euclidean distance only if explicitly necessary.
 - **Dependencies:** The graph is loaded as `nx.MultiGraph(G)` (undirected) to prevent ambulances from getting stuck in directed dead-ends.
 - **HDBSCAN:** The custom implementation in `src/intelligence/hdbscan.py` is fully tested and robust. It uses an Excess of Mass formula `(birth_level - death_level) * size` for cluster stability extraction.
+- **Seeds:** All randomness must flow through `sim_config_loader.py`. Zero hardcoded seeds. Use `event_seed`, `random_seed`, and `ambulance_seed` from config.
+- **Headless mode:** Set `SDL_VIDEODRIVER=dummy` BEFORE any `pygame` import. This is enforced in `main.py` and `run_baseline.py`.

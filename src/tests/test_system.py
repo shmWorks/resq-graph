@@ -13,7 +13,11 @@ import io
 import sys
 
 # Add project root to path for data access
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# __file__ = src/tests/test_system.py
+# dirname 1 = src/tests/
+# dirname 2 = src/
+# dirname 3 = project root (resq-graph/)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
