@@ -1,10 +1,10 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Claude Code guidance for this repo.
 
 ## Project Overview
 
-ResQ-Graph is an agent-based emergency ambulance dispatch simulation. Ambulances navigate a city road network (graph) to respond to dynamically generated emergency events. The system optimizes response times using smart dispatch algorithms, dynamic fleet rebalancing, and traffic models.
+ResQ-Graph: agent-based emergency ambulance dispatch simulation. Ambulances navigate city road network (graph) to respond to dynamic emergencies. System optimizes response times via smart dispatch, dynamic fleet rebalancing, traffic models.
 
 ## Common Commands
 
@@ -27,32 +27,32 @@ pytest tests/test_assignment.py -v
 
 ## Architecture
 
-The simulation runs on a tick-based engine (`src/simulation/simulation_engine.py`) that orchestrates several subsystems:
+Tick-based engine (`src/simulation/simulation_engine.py`) orchestrates subsystems:
 
-- **Map & Pathfinding**: Road network from `data/model_town.graphml` loaded as `nx.MultiGraph` (undirected to prevent dead-end trapping). A* uses Haversine heuristic. Pre-computed distance matrix (`data/distance_matrix.npy`) enables O(1) ambulance-event assignment.
+- **Map & Pathfinding**: Road network from `data/model_town.graphml` → `nx.MultiGraph` (undirected, prevents dead-end trap). A* uses Haversine heuristic. Pre-computed distance matrix (`data/distance_matrix.npy`) enables O(1) ambulance-event assignment.
 
-- **Traffic Model**: Dynamic edge congestion based on local event density. Modifies edge weights, triggers mid-route rerouting when conditions worsen significantly.
+- **Traffic Model**: Dynamic edge congestion from local event density. Modifies edge weights, triggers mid-route reroute when conditions worsen.
 
-- **Dispatcher**: Owns the queue of active events. Assigns idle ambulances via distance matrix lookups. Coordinates periodic fleet rebalancing to detected hotspots.
+- **Dispatcher**: Owns active event queue. Assigns idle ambulances via distance matrix lookups. Coordinates periodic fleet rebalancing to hotspots.
 
-- **Intelligence**: Custom HDBSCAN implementation detects demand hotspots from active event locations. Clusters are used for proactive ambulance positioning.
+- **Intelligence**: Custom HDBSCAN detects demand hotspots from active event locations. Clusters → proactive ambulance positioning.
 
 - **Event Spawner**: Poisson distribution generates emergencies at random graph nodes.
 
-- **Ambulance Agents**: State machines cycling through IDLE → IN_TRANSIT → ON_SCENE → REBALANCING. Follow pre-calculated paths node-by-node, interpolate pixel positions for rendering.
+- **Ambulance Agents**: State machines: IDLE → IN_TRANSIT → ON_SCENE → REBALANCING. Follow pre-calculated paths node-by-node, interpolate pixel positions for rendering.
 
 ## Key Design Decisions
 
-- **Distance Matrix**: Never bypass `assignment.py` for proximity calculations. Always use the distance matrix for O(1) lookups. Fall back to Euclidean distance only if explicitly necessary.
+- **Distance Matrix**: Never bypass `assignment.py` for proximity. Always use distance matrix for O(1) lookups. Fall back to Euclidean only if explicitly necessary.
 
-- **Rendering**: `pygame_renderer.py` relies strictly on data passed to its `draw()` method. Never put simulation state mutations inside the renderer.
+- **Rendering**: `pygame_renderer.py` draws only data passed to `draw()`. Never mutate simulation state inside renderer.
 
-- **Seeds**: All randomness flows through `sim_config_loader.py`. Zero hardcoded seeds. Use `event_seed`, `random_seed`, and `ambulance_seed` from config.
+- **Seeds**: All randomness flows through `sim_config_loader.py`. Zero hardcoded seeds. Use `event_seed`, `random_seed`, `ambulance_seed` from config.
 
-- **Headless Mode**: Set `SDL_VIDEODRIVER=dummy` BEFORE any `pygame` import. This is enforced in `main.py` and `run_baseline.py`.
+- **Headless Mode**: Set `SDL_VIDEODRIVER=dummy` BEFORE any `pygame` import. Enforced in `main.py` and `run_baseline.py`.
 
-- **HDBSCAN**: Custom implementation in `src/intelligence/hdbscan.py`. Uses Excess of Mass formula `(birth_level - death_level) * size` for cluster stability extraction.
+- **HDBSCAN**: Custom impl in `src/intelligence/hdbscan.py`. Uses Excess of Mass formula `(birth_level - death_level) * size` for cluster stability.
 
 ## Current Sprint
 
-Sprint 8 is complete. Features include headless baseline runner, random fleet placement generator, and baseline analysis tools with matplotlib visualizations.
+Sprint 8 complete. Headless baseline runner, random fleet placement generator, baseline analysis tools with matplotlib visualizations.

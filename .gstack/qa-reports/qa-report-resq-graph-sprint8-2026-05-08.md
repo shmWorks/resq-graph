@@ -15,12 +15,12 @@ Sprint 8 implementation is **mostly solid**. Found 1 bug in test infrastructure 
 
 ## Test Suite Results
 
-| Test Suite | Tests | Passed | Failed |
-|------------|-------|--------|--------|
-| tests/ (main) | 171 | 171 | 0 |
-| src/tests/test_random_fleet.py | 10 | 10 | 0 |
-| src/tests/test_genetic_algorithm.py | 20 | 20 | 0 |
-| src/tests/test_system.py | 6 | 6 | 0 |
+| Test Suite                          | Tests | Passed | Failed |
+| ----------------------------------- | ----- | ------ | ------ |
+| tests/ (main)                       | 171   | 171    | 0      |
+| src/tests/test_random_fleet.py      | 10    | 10     | 0      |
+| src/tests/test_genetic_algorithm.py | 20    | 20     | 0      |
+| src/tests/test_system.py            | 6     | 6      | 0      |
 
 **Total: 207 tests, 207 passed, 0 failed**
 
@@ -36,10 +36,13 @@ Sprint 8 implementation is **mostly solid**. Found 1 bug in test infrastructure 
 
 **Description:**
 The test calculates PROJECT_ROOT incorrectly:
+
 ```python
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ```
+
 For file `src/tests/test_system.py`:
+
 - `__file__` = `src/tests/test_system.py`
 - First `dirname` = `src/tests/`
 - Second `dirname` = `src/`
@@ -47,6 +50,7 @@ For file `src/tests/test_system.py`:
 This causes `os.chdir(PROJECT_ROOT)` to change to `src/` instead of project root (`resq-graph/`). Data files (`data/model_town.graphml`, `data/distance_matrix.npy`) are not found.
 
 **Reproduction:**
+
 ```bash
 cd C:\Users\mypc\Downloads\resq-graph
 .venv/Scripts/python.exe -m pytest src/tests/test_system.py -v
@@ -55,6 +59,7 @@ cd C:\Users\mypc\Downloads\resq-graph
 
 **Fix:**
 Change line 16 to:
+
 ```python
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ```
@@ -73,6 +78,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 If a node is genuinely not in the distance matrix index, the code falls back to Euclidean pixel distance with a warning. This is correct behavior but could indicate data consistency issues if it happens frequently.
 
 **Evidence:**
+
 ```python
 except KeyError:
     logger.warning(
@@ -94,6 +100,7 @@ except KeyError:
 
 **Description:**
 Code contains "BUG FIX" comments documenting previous issues:
+
 1. Line 278: UF root mapping fix for condensed tree corruption
 2. Line 345: Stability calculation fix for Excess-of-Mass
 
@@ -104,55 +111,60 @@ Code contains "BUG FIX" comments documenting previous issues:
 ## Simulation Verification
 
 ### Headless Mode
+
 ```bash
 .venv/Scripts/python.exe src/main.py --headless
 ```
+
 **Result:** SUCCESS - simulation runs without errors
 
 ### Baseline Runner
+
 ```bash
 .venv/Scripts/python.exe src/run_baseline.py --headless --config headless_baseline.yaml
 ```
+
 **Result:** SUCCESS - 10 runs completed, results written to `outputs/baseline_results.csv`
 
 ### Baseline Results
-| Run | Seed | Events | Mean ART | Std ART |
-|-----|------|--------|----------|---------|
-| 0 | 42 | 49 | 25.12 | 9.69 |
-| 1 | 43 | 52 | 23.62 | 8.07 |
-| 2 | 44 | 44 | 26.14 | 10.03 |
-| 3 | 45 | 43 | 26.77 | 11.44 |
-| 4 | 46 | 42 | 23.62 | 6.91 |
-| 5 | 47 | 54 | 26.09 | 9.86 |
-| 6 | 48 | 42 | 29.14 | 13.28 |
-| 7 | 49 | 42 | 25.00 | 7.78 |
-| 8 | 50 | 34 | 26.09 | 10.58 |
-| 9 | 51 | 58 | 26.72 | 11.17 |
-| **SUMMARY** | all | 460 | **25.83** | 1.55 |
+
+| Run         | Seed | Events | Mean ART  | Std ART |
+| ----------- | ---- | ------ | --------- | ------- |
+| 0           | 42   | 49     | 25.12     | 9.69    |
+| 1           | 43   | 52     | 23.62     | 8.07    |
+| 2           | 44   | 44     | 26.14     | 10.03   |
+| 3           | 45   | 43     | 26.77     | 11.44   |
+| 4           | 46   | 42     | 23.62     | 6.91    |
+| 5           | 47   | 54     | 26.09     | 9.86    |
+| 6           | 48   | 42     | 29.14     | 13.28   |
+| 7           | 49   | 42     | 25.00     | 7.78    |
+| 8           | 50   | 34     | 26.09     | 10.58   |
+| 9           | 51   | 58     | 26.72     | 11.17   |
+| **SUMMARY** | all  | 460    | **25.83** | 1.55    |
 
 ---
 
 ## Edge Cases Verified
 
-| Edge Case | Result |
-|-----------|--------|
-| Empty ambulance list returns None | PASS |
-| Ambulance at None location | PASS |
-| All ambulances busy | PASS (event stays unassigned) |
-| Distance matrix missing node | PASS (Euclidean fallback) |
-| Zero events spawned | PASS |
-| Poisson with lambda=0 | PASS (returns empty list) |
+| Edge Case                         | Result                        |
+| --------------------------------- | ----------------------------- |
+| Empty ambulance list returns None | PASS                          |
+| Ambulance at None location        | PASS                          |
+| All ambulances busy               | PASS (event stays unassigned) |
+| Distance matrix missing node      | PASS (Euclidean fallback)     |
+| Zero events spawned               | PASS                          |
+| Poisson with lambda=0             | PASS (returns empty list)     |
 
 ---
 
 ## Health Score Calculation
 
-| Category | Score | Weight |
-|----------|-------|--------|
-| Tests | 97% | 50% |
-| Simulation Run | 100% | 30% |
-| Baseline Results | 100% | 10% |
-| Edge Cases | 100% | 10% |
+| Category         | Score | Weight |
+| ---------------- | ----- | ------ |
+| Tests            | 97%   | 50%    |
+| Simulation Run   | 100%  | 30%    |
+| Baseline Results | 100%  | 10%    |
+| Edge Cases       | 100%  | 10%    |
 
 **Final Score: 100/100**
 
@@ -168,8 +180,7 @@ Code contains "BUG FIX" comments documenting previous issues:
 
 ## Files Changed (Sprint 8)
 
-```
-README.md
+EADME.md
 headless_baseline.yaml
 implementation_plan.md
 outputs/baseline_report.md
@@ -190,7 +201,6 @@ src/simulation/random_fleet.py
 src/simulation/simulation_engine.py
 src/tests/test_random_fleet.py
 src/visualizer.py
-```
 
 ---
 
