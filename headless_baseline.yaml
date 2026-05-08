@@ -1,0 +1,32 @@
+config_version: "1.0.0"
+
+# ---------------------------------------------------------------------------
+# Reproducibility seeds (Sprint 8 – US-032)
+# ---------------------------------------------------------------------------
+# random_seed   → controls random station placement (random_fleet.py)
+# event_seed    → controls Poisson event spawning (event_spawner.py)
+# ambulance_seed → reserved for future randomized ambulance init
+# ---------------------------------------------------------------------------
+random_seed: 42
+event_seed: 100
+ambulance_seed: 200
+
+# ---------------------------------------------------------------------------
+# Baseline experiment parameters
+# ---------------------------------------------------------------------------
+n_stations: 5       # ambulance stations per random fleet placement
+n_repeats: 10       # number of random placements to average over
+ticks_per_run: 1000 # simulation ticks per baseline run
+headless: true
+
+# ---------------------------------------------------------------------------
+# Simulation parameters (inherits sim_config.yaml defaults where not overridden)
+# ---------------------------------------------------------------------------
+NUM_AMBULANCES: 5
+SIMULATION_TICKS: 1000
+TARGET_FPS: 0           # 0 = headless (no display, no frame-rate cap)
+POISSON_LAMBDA: 0.05
+TRAFFIC_ENABLED: true
+
+LOG_LEVEL: "WARNING"    # suppress verbose INFO logs during batch runs
+LOG_FILE: "outputs/baseline_sim.log"

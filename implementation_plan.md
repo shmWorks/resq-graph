@@ -1,151 +1,263 @@
-# Merged Implementation Plan: Sprints 6 & 7 – Dynamic Optimization & Simulation Realism
+# Sprint 8 Implementation Plan
+## Baseline Comparison & Random Fleet (Week 8)
 
-**Sprint Goal:** Implement advanced dynamic intelligence using HDBSCAN (from scratch) for demand clustering, integrate realistic traffic congestion with real-time re-routing, and finalize the simulation infrastructure with a centralized configuration and logging system.  
-**Duration:** Weeks 6-7 (Merged)  
-**Total Story Points:** 35  
-**Visualization Stack:** Pygame (Live) + Matplotlib (Offline)
+**Sprint Goal:** Establish a performance baseline using random station placement and add headless mode for batch experiments.
 
----
-
-## User Review Required
-
-> [!IMPORTANT]
-> **Algorithm Change Decision:** Per user request, we are replacing K-Means with **HDBSCAN** for hotspot detection. 
-> - **Traceability:** This replaces US-021 and US-039 (Sprint 10).
-> - **Impact on Sprint 10:** The sensitivity analysis for `k` in US-039 will be replaced with a sensitivity analysis for `min_cluster_size` and `min_samples`.
-
-> [!NOTE]
-> **Ambulance State Change:** We are formally introducing a `REBALANCING` state to the ambulance state machine. This allows the dispatcher to track ambulances moving toward hotspots without conflating them with `IN_TRANSIT` (emergency response) or `IDLE` (stationary) states.
+> **Codebase context:** This sprint extends ResQ-Graph as it stands after Sprint 7. All new code must respect the existing architecture — use `assignment.py` for proximity lookups, never mutate simulation state inside `pygame_renderer.py`, and load the graph as `nx.MultiGraph`. Seeds and parameters must flow through the YAML config system (`sim_config_loader.py`).
 
 ---
 
-## Table of Contents
+## Overview
 
-1. [Sprint Overview](#sprint-overview)
-2. [Render Layer Stack](#render-layer-stack)
-3. [Module 1: HDBSCAN Clustering & Rebalancing (Sprint 6)](#module-1-hdbscan-clustering--rebalancing)
-4. [Module 2: Traffic Dynamics & Re-routing (Sprint 7)](#module-2-traffic-dynamics--re-routing)
-5. [Module 3: Config & Logging Infrastructure (Sprint 7)](#module-3-config--logging-infrastructure)
-6. [Testing & Verification](#testing--verification)
-7. [Definition of Done](#definition-of-done)
-
----
-
-## Sprint Overview
-
-| User Story | Title | Points | Component |
-|---|---|---|---|
-| **US-021** | Implement HDBSCAN from Scratch | 10 | Intelligence |
-| **US-022** | Create Demand Clustering Module | 4 | Intelligence |
-| **US-023** | Integrate Hotspot Rebalancing into Dispatcher | 5 | Simulation |
-| **US-024** | Visualize Hotspots & Clusters (Pygame) | 4 | Rendering |
-| **US-025** | Traffic Congestion Simulation (Edge Dynamics) | 6 | Simulation |
-| **US-026** | Ambulance Re-routing on Path | 4 | Simulation |
-| **US-027** | Simulation Parameter Configuration (YAML) | 3 | Infra |
-| **US-028** | Comprehensive Simulation Logging System | 3 | Infra |
-| **Total** | | **39** | |
+| Story | Title | Points |
+|-------|-------|--------|
+| US-029 | Random Station Placement Generator | 2 |
+| US-030 | Run Simulation with Random Fleet (Baseline) | 5 |
+| US-031 | Document Random Fleet Baseline Results | 3 |
+| US-032 | Baseline Configuration & Reproducibility Seed | 2 |
+| **Total** | | **12** |
 
 ---
 
-## Render Layer Stack
+## US-029 · Random Station Placement Generator
+**As a baseline engineer, I want a random fleet so that I have a control group.**
 
-To ensure visual consistency and performance, all rendering must follow this Z-order:
+### Acceptance Criteria
+- Generate 5 unique random node IDs from the graph (no duplicates)
+- Repeat generation N times (default: 10) to support averaged baseline calculation
+- All random placements logged for reproducibility
+- Function returns a list of node IDs
 
-| Layer | Component | Source | Optimization |
-|---|---|---|---|
-| **0** | Map Background | `map_bg.png` | Static Blit |
-| **1** | Congestion Heatmap | **Sprint 7** | **Cached Surface** (only redraw on weight change) |
-| **2** | Accident Markers | Sprint 4 | Redraw per tick |
-| **3** | Hotspot Convex Hulls | **Sprint 6** | Redraw per tick (Alpha Surface) |
-| **4** | Hotspot Pulsing Circles | **Sprint 6** | Redraw per tick |
-| **5** | Ambulance Paths | Sprint 5 | Dashed lines |
-| **6** | Ambulance Sprites | Sprint 4 | Sprites with state-colors |
-| **7** | HUD / Log Strip | **Sprint 7** | Text Rendering |
-| **8** | Metrics / Log History | Sprint 5/7 | Toggleable Overlays (`M`, `L`) |
+### Implementation Tasks
 
----
+#### 1. New file: `src/simulation/random_fleet.py`
+- Implement `generate_random_fleet(graph, n_stations, n_repeats, seed)`:
+  - Use `random.sample(list(graph.nodes()), n_stations)` inside a seeded RNG — the graph is already loaded as `nx.MultiGraph` in the engine, so accept it as a parameter rather than re-loading it
+  - Return a list of lists: `[[node_id, ...], ...]` — one inner list per repeat
+- Read `n_stations`, `n_repeats`, and `random_seed` from the config dict passed in, consistent with how other modules consume config values via `sim_config_loader.py`
 
-## Module 1: HDBSCAN Clustering & Rebalancing
+#### 2. Logging
+- Write each generated placement set to `outputs/random_fleet_log.json` (alongside existing CSV outputs in `outputs/`)
+- Each entry: `{ "repeat": i, "seed": seed, "nodes": [...], "timestamp": "..." }`
+- Use the existing `sim_logger.py` logging infrastructure for console output rather than setting up a separate logger
 
-### US-021: HDBSCAN Module (From Scratch)
-- **Goal:** Manual implementation of density-based clustering.
-- **Implementation Standard:** The implementation should be as efficient, optimized, robust, clean, and self-documenting as a professional library API (e.g., `scikit-learn`), avoiding premature optimization (Hoare's Maxim) while ensuring high performance on simulation-sized datasets.
-- **Steps:**
-  1. **Core Distance:** Find distance to $k$-th neighbor ($k = \text{min\_samples}$).
-  2. **Mutual Reachability:** $d_{mre}(a, b) = \max(\text{core}_a, \text{core}_b, \text{dist}(a, b))$.
-  3. **MST:** Build Minimum Spanning Tree using $d_{mre}$.
-  4. **Condense Tree:** Collapse hierarchy based on `min_cluster_size`.
-  5. **Stability Extraction:** Select clusters by maximizing "Excess of Mass".
-
-### US-022: Demand Clustering Module
-- **Acceptance Criteria:**
-  - Input: List of active accident locations.
-  - Output: List of `Hotspot` objects containing `(node_id, pixel_pos)` tuples.
-  - Centroids calculated as geometric mean of cluster members.
-
-### US-023: Dispatcher Rebalancing
-- **Acceptance Criteria:**
-  - Every `rebalance_interval` (default 50), run HDBSCAN.
-  - Assign `IDLE` ambulances to navigate to hotspot centroids.
-  - **New State:** Transition ambulance to `REBALANCING` state while moving.
-  - Ensure rebalancing does not interrupt existing `IN_TRANSIT` assignments.
-
-### US-024: Hotspot Visualization
-- **Acceptance Criteria:**
-  - Pulsing blue circles at centroids.
-  - Translucent shaded convex hulls for cluster boundaries.
-  - **Interaction:** Press **H** to toggle hotspot overlay on/off.
+#### 3. Tests: `tests/test_random_fleet.py`
+- Confirm no duplicate node IDs within a single placement set
+- Confirm same seed always produces identical output
+- Confirm output dimensions match `n_stations` × `n_repeats`
+- Run via `pytest tests/ -v` as per project convention
 
 ---
 
-## Module 2: Traffic Dynamics & Re-routing
+## US-030 · Run Simulation with Random Fleet (Baseline)
+**As a researcher, I want a baseline ART so that optimization gains are measurable.**
 
-### US-025: Traffic Congestion Simulation
-- **Acceptance Criteria:**
-  - Weight Multiplier: 1.0 (free) to 2.5 (max congestion).
-  - Congestion increases with local event density and decays over time.
-  - **Visualization:** Roads colored Green → Yellow → Red.
-  - **Optimization:** Use a cached `pygame.Surface` for the heatmap layer.
-  - **Interaction:** Press **T** to toggle traffic overlay on/off.
+### Acceptance Criteria
+- Run simulation **10 times** with different random seeds
+- Each run executes **1000+ ticks** with Poisson event spawning
+- **Headless mode** via `--headless` flag (`SDL_VIDEODRIVER=dummy` set before `pygame.init()`)
+- Collect ART (Average Response Time) per run
+- Calculate mean ART and standard deviation across all runs
+- Results exported to CSV
 
-### US-026: Ambulance Re-routing
-- **Acceptance Criteria:**
-  - In-transit ambulances check path weight every $N$ ticks.
-  - **Trigger:** Re-route if the remaining path weight has **increased by ≥ 20%**.
-  - Re-routing logged with reason: `"CONGESTION_DETECTED"`.
+### Implementation Tasks
+
+#### 1. Refactor `run_simulation()` in `src/simulation/simulation_engine.py`
+Currently, `run_simulation()` parses its own arguments. Refactor it to support programmatic injection:
+- Accept `cfg: dict = None` and `initial_nodes: list[int] = None` as optional arguments.
+- If `initial_nodes` is provided, use them instead of the default modulo-based node selection.
+- This allows `run_baseline.py` to execute the simulation loop without duplicating setup logic.
+
+#### 2. Headless flag in `src/main.py`
+`src/main.py` is the project's single entry point. Add headless support there:
+
+```python
+import argparse, os
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--headless", action="store_true")
+parser.add_argument("--config", default="sim_config.yaml")
+args = parser.parse_args()
+
+if args.headless:
+    os.environ["SDL_VIDEODRIVER"] = "dummy"
+
+import pygame  # must come AFTER the env var is set
+pygame.init()
+```
+
+- `SDL_VIDEODRIVER=dummy` **must** be set before `pygame.init()` — since `pygame_renderer.py` is imported downstream, this ordering is enforced by keeping the flag check at the very top of `main.py` before any other project imports
+- When `--headless` is active, the renderer's `draw()` call can be skipped entirely (wrap in `if not args.headless`) — this respects the architecture rule that the renderer must never hold simulation state
+
+#### 2. Baseline runner script: `src/run_baseline.py`
+- Accepts `--headless`, `--config`, and optionally `--seeds` (list) and `--ticks`
+- Loops over 10 seeds (sourced from `headless_baseline.yaml` via `sim_config_loader.py`):
+  - Calls `generate_random_fleet()` with the current seed to get starting node IDs
+  - Instantiates `SimulationEngine` with those node IDs and runs for ≥ 1000 ticks
+  - Uses the existing `MetricsTracker` (already in `src/simulation/metrics_tracker.py`) to collect per-run ART — do not implement a separate metrics system
+- All batch runs must pass `--headless` to avoid requiring a display
+
+#### 3. Results export: `outputs/baseline_results.csv`
+- Reuse `MetricsTracker`'s export logic where possible; extend it if needed to accept a `run_id` column
+- Final CSV columns:
+  ```
+  run_id, seed, n_events, mean_art, std_art, ticks
+  ```
+- Append a summary row (mean and std dev across all 10 runs) at the bottom
 
 ---
 
-## Module 3: Config & Logging Infrastructure
+## US-031 · Document Random Fleet Baseline Results
+**As an analyst, I want clear baseline documentation so that comparisons are meaningful.**
 
-### US-027: Simulation Parameter Configuration
-- **Acceptance Criteria:**
-  - Support `SCREEN_W`, `SCREEN_H`, and `TARGET_FPS`.
-  - Support `profiles:` in YAML (e.g., `default`, `headless`, `high_stress`).
-  - Headless profile must set `SDL_VIDEODRIVER: dummy` (Note: this must be set in `os.environ` before `pygame.init()`).
+### Acceptance Criteria
+- Report includes: baseline ART, std dev, number of events processed
+- Visualizations generated with **matplotlib** (offline, no display required):
+  - ART distribution histogram
+  - Time-series of response times per run
+- Analysis covers observed inefficiencies of random placement
+- Markdown report generated automatically from the analysis script
 
-### US-028: Comprehensive Logging
-- **Acceptance Criteria:**
-  - Multi-level logging (DEBUG, INFO, WARNING) to console and file.
-  - **Log Strip:** Bottom-of-screen Pygame overlay showing last 5 events.
-  - **Interaction:** Press **L** to expand/collapse the full log history overlay.
+### Implementation Tasks
+
+#### 1. Analysis script: `src/analyze_baseline.py`
+- Reads `outputs/baseline_results.csv`
+- Computes summary statistics: mean ART, std dev, min/max ART, total events processed
+
+#### 2. Visualizations using `src/visualizer.py`
+The project already has a legacy matplotlib visualizer at `src/visualizer.py`. 
+- **Task**: Move `src/visualizer.py` to `src/rendering/visualizer.py` to maintain architectural consistency.
+- Add the baseline figures there as new functions:
+  - `plot_art_distribution(results_df)` — histogram of ART across all 10 runs
+    - Saved to `outputs/figures/art_distribution.png`
+  - `plot_art_timeseries(results_df)` — per-run response time series, overlaid
+    - Saved to `outputs/figures/art_timeseries.png`
+- Call `matplotlib.use("Agg")` at the top of `visualizer.py` (already present) to ensure offline/headless rendering.
+
+#### 3. Auto-generated report: `outputs/baseline_report.md`
+`analyze_baseline.py` writes this file programmatically, including:
+- Summary statistics table
+- Embedded figure references (`![ART Distribution](figures/art_distribution.png)`)
+- Written observations on random placement inefficiencies (e.g., spatial clustering, uncovered zones, long travel distances vs. optimized placement)
+- Pointers for the optimized fleet comparison in later sprints
 
 ---
 
-## Testing & Verification
+## US-032 · Baseline Configuration & Reproducibility Seed
+**As a researcher, I want reproducible results so that experiments are valid.**
 
-### Automated Tests
-- **Reroute Threshold:** Assert that a 15% increase does *not* trigger re-route, but 25% *does*.
-- **State Machine:** Assert `IDLE` -> `REBALANCING` -> `IDLE` transition on arrival at hotspot.
-- **Centroid Logic:** Assert `pixel_pos` matches the mapped coordinates of the `node_id`.
+### Acceptance Criteria
+- Baseline seed documented (`random_seed` for random fleet generation)
+- Simulation seeds set for both event spawning and ambulance initialization
+- Config version tracked
+- `headless_baseline.yaml` added to repo alongside the windowed config
+- README documents how to reproduce the full baseline run
 
-### Manual Verification
-- Verify **H**, **T**, and **L** keys toggle their respective layers.
-- Verify simulation runs in `--headless` mode using the config profile.
+### Implementation Tasks
+
+#### 1. New config file: `headless_baseline.yaml`
+Add this at the project root alongside the existing `sim_config.yaml`:
+
+```yaml
+config_version: "1.0.0"
+
+# Reproducibility seeds
+random_seed: 42        # controls random fleet generation (random_fleet.py)
+event_seed: 100        # controls Poisson event spawning (event_spawner.py)
+ambulance_seed: 200    # controls ambulance initialization order
+
+# Baseline experiment parameters
+n_stations: 5
+n_repeats: 10
+ticks_per_run: 1000
+headless: true
+```
+
+- All three seed values must be consumed via `sim_config_loader.py` — no hardcoded seeds anywhere in the codebase
+- `sim_config.yaml` (the windowed interactive config) remains **unchanged**
+
+#### 2. Seed propagation
+- `event_spawner.py`: pass `event_seed` to its RNG at initialization
+- `ambulance.py` initialization: use `ambulance_seed` if any randomness is involved in setup
+- `random_fleet.py`: uses `random_seed` as shown in US-029
+- `ambulance.py`: currently deterministic, but `ambulance_seed` is provided to the simulation for future-proofing any randomized setup logic.
+
+#### 3. README update
+Add a **"Reproducing the Baseline (Sprint 8)"** section to `README.md`:
+
+```markdown
+## Reproducing the Baseline (Sprint 8)
+
+1. Install dependencies into your virtual environment:
+   pip install -r requirements.txt
+
+2. Run the baseline batch experiment (headless):
+   python src/run_baseline.py --headless --config headless_baseline.yaml
+
+3. Analyze results and generate the report:
+   python src/analyze_baseline.py
+
+4. View the report:
+   outputs/baseline_report.md
+
+Seeds are defined in headless_baseline.yaml. random_seed controls fleet
+placement, event_seed controls Poisson spawning, and ambulance_seed controls
+ambulance initialization. Changing any seed will change results.
+```
 
 ---
 
-## Execution Strategy
+## Updated File & Directory Structure
 
-> [!NOTE]
-> **Progress Tracking:** Upon approval of this plan, a `task.md` will be created in the artifact directory to track granular progress across all modules.
+Only **new or modified** files are marked; everything else is unchanged from Sprint 7.
+
+```
+resq-graph/
+├── data/                          (unchanged)
+├── outputs/
+│   ├── baseline_results.csv       [NEW] US-030: raw per-run results
+│   ├── baseline_report.md         [NEW] US-031: auto-generated report
+│   ├── random_fleet_log.json      [NEW] US-029: placement logs
+│   └── figures/
+│       ├── art_distribution.png   [NEW] US-031
+│       └── art_timeseries.png     [NEW] US-031
+├── src/
+│   ├── main.py                    [MODIFIED] US-030: --headless flag added
+│   ├── config.py                  (unchanged)
+│   ├── sim_config_loader.py       (unchanged)
+│   ├── run_baseline.py            [NEW] US-030: batch runner
+│   ├── analyze_baseline.py        [NEW] US-031: analysis & report generator
+│   ├── intelligence/              (unchanged)
+│   ├── rendering/
+│   │   ├── pygame_renderer.py     (unchanged — no state mutations)
+│   │   └── visualizer.py          [MOVED & MODIFIED] US-031: moved from src/ and new plots added
+│   └── simulation/
+│       ├── simulation_engine.py   [MODIFIED] US-030: refactored for programmatic injection
+│       ├── random_fleet.py        [NEW] US-029: fleet generator
+│       ├── event_spawner.py       [MODIFIED] US-032: event_seed wired in
+│       ├── ambulance.py           [MODIFIED] US-032: ambulance_seed wired in
+│       └── ... (all others unchanged)
+├── tests/
+│   └── test_random_fleet.py       [NEW] US-029: unit tests
+├── sim_config.yaml                (unchanged — windowed config)
+├── headless_baseline.yaml         [NEW] US-032: headless/batch config
+└── README.md                      [MODIFIED] US-032: reproduction steps added
+```
+
+---
+
+## Definition of Done
+
+- [x] `generate_random_fleet()` passes all Pytest tests; no duplicates; same seed → same output
+- [x] `--headless` in `main.py` sets `SDL_VIDEODRIVER=dummy` before any `pygame` import
+- [x] Renderer `draw()` call is skipped cleanly in headless mode — no state mutations
+- [x] `run_baseline.py` completes 10 runs × 1000+ ticks headlessly without errors
+- [x] `MetricsTracker` used for ART collection (no parallel metrics system)
+- [x] `baseline_results.csv` written to `outputs/` with all 10 runs + summary row
+- [x] Both matplotlib figures saved via `Agg` backend to `outputs/figures/`
+- [x] `baseline_report.md` auto-generated with stats, embedded figures, and analysis
+- [x] `headless_baseline.yaml` committed with all three seeds documented
+- [x] `sim_config.yaml` (windowed) remains untouched and fully functional
+- [x] All seeds flow through `sim_config_loader.py` — zero hardcoded values
+- [x] README updated with reproduction steps referencing correct entry points
+- [x] All new tests pass under `pytest tests/ -v`

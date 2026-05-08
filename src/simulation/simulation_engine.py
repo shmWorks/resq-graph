@@ -85,10 +85,10 @@ def _build_node_index(graph) -> dict:
 def _load_or_compute_matrix(graph, matrix_path: str = "data/distance_matrix.npy"):
     node_index = _build_node_index(graph)
     if os.path.exists(matrix_path):
-        logger.info("Loading distance matrix from %s …", matrix_path)
+        logger.info("Loading distance matrix from %s ...", matrix_path)
         matrix = load_distance_matrix(matrix_path)
     else:
-        logger.info("Distance matrix not found. Computing … (this may take a moment)")
+        logger.info("Distance matrix not found. Computing ... (this may take a moment)")
         matrix, node_index = compute_distance_matrix(graph, save_path=matrix_path)
     return matrix, node_index
 
@@ -158,18 +158,35 @@ def _parse_args() -> argparse.Namespace:
 
 # ── Main entry point ───────────────────────────────────────────────────────────
 
-def run_simulation() -> None:
-    """Initialise all components and run the main Pygame loop."""
-    args = _parse_args()
+def run_simulation(
+    cfg_override: dict | None = None,
+    initial_nodes: list[int] | None = None,
+) -> None:
+    """Initialise all components and run the main Pygame loop.
 
-    # ── Load YAML config ───────────────────────────────────────────────────
-    try:
-        cfg = load_sim_config(path=args.config, profile=args.profile)
-    except (FileNotFoundError, KeyError) as exc:
-        # Graceful fallback: use hard-coded defaults
-        logging.basicConfig(level=logging.WARNING)
-        logging.warning("Config load failed (%s); using hard-coded defaults.", exc)
-        cfg = {}
+    Parameters
+    ----------
+    cfg_override : dict, optional
+        When supplied (e.g. by run_baseline.py) this dict is used directly as
+        the runtime config, bypassing CLI argument parsing and YAML loading.
+    initial_nodes : list[int], optional
+        When supplied, these node IDs are used as ambulance start positions
+        instead of the default modulo-based selection.  Must have exactly
+        ``num_ambulances`` entries.
+    """
+    # ── When called programmatically, skip CLI parsing ─────────────────────
+    if cfg_override is not None:
+        cfg = cfg_override
+    else:
+        args = _parse_args()
+        # ── Load YAML config ───────────────────────────────────────────────
+        try:
+            cfg = load_sim_config(path=args.config, profile=args.profile)
+        except (FileNotFoundError, KeyError) as exc:
+            # Graceful fallback: use hard-coded defaults
+            logging.basicConfig(level=logging.WARNING)
+            logging.warning("Config load failed (%s); using hard-coded defaults.", exc)
+            cfg = {}
 
     # ── Initialise logging (US-028) ────────────────────────────────────────
     log_level = cfg.get("LOG_LEVEL", "INFO")
@@ -206,9 +223,20 @@ def run_simulation() -> None:
     distance_matrix, node_index = _load_or_compute_matrix(graph)
 
     # ── Initialise ambulances ──────────────────────────────────────────────
-    node_ids   = list(node_positions.keys())
+    # initial_nodes can be injected by run_baseline.py (US-030)
+    if initial_nodes is not None:
+        start_nodes = initial_nodes[:num_ambulances]
+        # Pad with defaults if fewer nodes than ambulances provided
+        if len(start_nodes) < num_ambulances:
+            fallback = list(node_positions.keys())
+            while len(start_nodes) < num_ambulances:
+                start_nodes.append(int(fallback[len(start_nodes) % len(fallback)]))
+    else:
+        node_ids    = list(node_positions.keys())
+        start_nodes = [int(node_ids[i % len(node_ids)]) for i in range(num_ambulances)]
+
     ambulances = [
-        Ambulance(id=i, start_node=int(node_ids[i % len(node_ids)]), graph=graph)
+        Ambulance(id=i, start_node=start_nodes[i], graph=graph)
         for i in range(num_ambulances)
     ]
     for amb in ambulances:
@@ -227,7 +255,8 @@ def run_simulation() -> None:
         logger.info("Traffic model initialised (max_mult=%.1f).", traffic.max_multiplier)
 
     # ── Initialise subsystems ──────────────────────────────────────────────
-    spawner    = EventSpawner(lambda_rate=poisson_lambda, node_positions=node_positions)
+    event_seed = cfg.get("event_seed", None)  # US-032: reproducibility seed
+    spawner    = EventSpawner(lambda_rate=poisson_lambda, node_positions=node_positions, rng_seed=event_seed)
     dispatcher = DispatcherBrain(
         ambulances      = ambulances,
         distance_matrix = distance_matrix,
@@ -247,9 +276,10 @@ def run_simulation() -> None:
     show_log           = False
     running            = True
 
+    _profile_label = getattr(args, "profile", None) if cfg_override is None else "programmatic"
     logger.info(
         "Simulation starting: %d ambulances, %d ticks, profile=%r.",
-        num_ambulances, simulation_ticks, args.profile,
+        num_ambulances, simulation_ticks, _profile_label,
     )
 
     # ── Main loop ──────────────────────────────────────────────────────────
