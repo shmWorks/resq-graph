@@ -1,4 +1,5 @@
 # Sprint 8 Implementation Plan
+
 ## Baseline Comparison & Random Fleet (Week 8)
 
 **Sprint Goal:** Establish a performance baseline using random station placement and add headless mode for batch experiments.
@@ -9,20 +10,22 @@
 
 ## Overview
 
-| Story | Title | Points |
-|-------|-------|--------|
-| US-029 | Random Station Placement Generator | 2 |
-| US-030 | Run Simulation with Random Fleet (Baseline) | 5 |
-| US-031 | Document Random Fleet Baseline Results | 3 |
-| US-032 | Baseline Configuration & Reproducibility Seed | 2 |
-| **Total** | | **12** |
+| Story     | Title                                         | Points |
+| --------- | --------------------------------------------- | ------ |
+| US-029    | Random Station Placement Generator            | 2      |
+| US-030    | Run Simulation with Random Fleet (Baseline)   | 5      |
+| US-031    | Document Random Fleet Baseline Results        | 3      |
+| US-032    | Baseline Configuration & Reproducibility Seed | 2      |
+| **Total** |                                               | **12** |
 
 ---
 
 ## US-029 · Random Station Placement Generator
+
 **As a baseline engineer, I want a random fleet so that I have a control group.**
 
 ### Acceptance Criteria
+
 - Generate 5 unique random node IDs from the graph (no duplicates)
 - Repeat generation N times (default: 10) to support averaged baseline calculation
 - All random placements logged for reproducibility
@@ -31,17 +34,20 @@
 ### Implementation Tasks
 
 #### 1. New file: `src/simulation/random_fleet.py`
+
 - Implement `generate_random_fleet(graph, n_stations, n_repeats, seed)`:
   - Use `random.sample(list(graph.nodes()), n_stations)` inside a seeded RNG — the graph is already loaded as `nx.MultiGraph` in the engine, so accept it as a parameter rather than re-loading it
   - Return a list of lists: `[[node_id, ...], ...]` — one inner list per repeat
 - Read `n_stations`, `n_repeats`, and `random_seed` from the config dict passed in, consistent with how other modules consume config values via `sim_config_loader.py`
 
 #### 2. Logging
+
 - Write each generated placement set to `outputs/random_fleet_log.json` (alongside existing CSV outputs in `outputs/`)
 - Each entry: `{ "repeat": i, "seed": seed, "nodes": [...], "timestamp": "..." }`
 - Use the existing `sim_logger.py` logging infrastructure for console output rather than setting up a separate logger
 
 #### 3. Tests: `tests/test_random_fleet.py`
+
 - Confirm no duplicate node IDs within a single placement set
 - Confirm same seed always produces identical output
 - Confirm output dimensions match `n_stations` × `n_repeats`
@@ -50,9 +56,11 @@
 ---
 
 ## US-030 · Run Simulation with Random Fleet (Baseline)
+
 **As a researcher, I want a baseline ART so that optimization gains are measurable.**
 
 ### Acceptance Criteria
+
 - Run simulation **10 times** with different random seeds
 - Each run executes **1000+ ticks** with Poisson event spawning
 - **Headless mode** via `--headless` flag (`SDL_VIDEODRIVER=dummy` set before `pygame.init()`)
@@ -63,12 +71,15 @@
 ### Implementation Tasks
 
 #### 1. Refactor `run_simulation()` in `src/simulation/simulation_engine.py`
+
 Currently, `run_simulation()` parses its own arguments. Refactor it to support programmatic injection:
+
 - Accept `cfg: dict = None` and `initial_nodes: list[int] = None` as optional arguments.
 - If `initial_nodes` is provided, use them instead of the default modulo-based node selection.
 - This allows `run_baseline.py` to execute the simulation loop without duplicating setup logic.
 
 #### 2. Headless flag in `src/main.py`
+
 `src/main.py` is the project's single entry point. Add headless support there:
 
 ```python
@@ -90,6 +101,7 @@ pygame.init()
 - When `--headless` is active, the renderer's `draw()` call can be skipped entirely (wrap in `if not args.headless`) — this respects the architecture rule that the renderer must never hold simulation state
 
 #### 2. Baseline runner script: `src/run_baseline.py`
+
 - Accepts `--headless`, `--config`, and optionally `--seeds` (list) and `--ticks`
 - Loops over 10 seeds (sourced from `headless_baseline.yaml` via `sim_config_loader.py`):
   - Calls `generate_random_fleet()` with the current seed to get starting node IDs
@@ -98,6 +110,7 @@ pygame.init()
 - All batch runs must pass `--headless` to avoid requiring a display
 
 #### 3. Results export: `outputs/baseline_results.csv`
+
 - Reuse `MetricsTracker`'s export logic where possible; extend it if needed to accept a `run_id` column
 - Final CSV columns:
   ```
@@ -108,9 +121,11 @@ pygame.init()
 ---
 
 ## US-031 · Document Random Fleet Baseline Results
+
 **As an analyst, I want clear baseline documentation so that comparisons are meaningful.**
 
 ### Acceptance Criteria
+
 - Report includes: baseline ART, std dev, number of events processed
 - Visualizations generated with **matplotlib** (offline, no display required):
   - ART distribution histogram
@@ -121,11 +136,14 @@ pygame.init()
 ### Implementation Tasks
 
 #### 1. Analysis script: `src/analyze_baseline.py`
+
 - Reads `outputs/baseline_results.csv`
 - Computes summary statistics: mean ART, std dev, min/max ART, total events processed
 
 #### 2. Visualizations using `src/visualizer.py`
-The project already has a legacy matplotlib visualizer at `src/visualizer.py`. 
+
+The project already has a legacy matplotlib visualizer at `src/visualizer.py`.
+
 - **Task**: Move `src/visualizer.py` to `src/rendering/visualizer.py` to maintain architectural consistency.
 - Add the baseline figures there as new functions:
   - `plot_art_distribution(results_df)` — histogram of ART across all 10 runs
@@ -135,7 +153,9 @@ The project already has a legacy matplotlib visualizer at `src/visualizer.py`.
 - Call `matplotlib.use("Agg")` at the top of `visualizer.py` (already present) to ensure offline/headless rendering.
 
 #### 3. Auto-generated report: `outputs/baseline_report.md`
+
 `analyze_baseline.py` writes this file programmatically, including:
+
 - Summary statistics table
 - Embedded figure references (`![ART Distribution](figures/art_distribution.png)`)
 - Written observations on random placement inefficiencies (e.g., spatial clustering, uncovered zones, long travel distances vs. optimized placement)
@@ -144,9 +164,11 @@ The project already has a legacy matplotlib visualizer at `src/visualizer.py`.
 ---
 
 ## US-032 · Baseline Configuration & Reproducibility Seed
+
 **As a researcher, I want reproducible results so that experiments are valid.**
 
 ### Acceptance Criteria
+
 - Baseline seed documented (`random_seed` for random fleet generation)
 - Simulation seeds set for both event spawning and ambulance initialization
 - Config version tracked
@@ -156,15 +178,16 @@ The project already has a legacy matplotlib visualizer at `src/visualizer.py`.
 ### Implementation Tasks
 
 #### 1. New config file: `headless_baseline.yaml`
+
 Add this at the project root alongside the existing `sim_config.yaml`:
 
 ```yaml
 config_version: "1.0.0"
 
 # Reproducibility seeds
-random_seed: 42        # controls random fleet generation (random_fleet.py)
-event_seed: 100        # controls Poisson event spawning (event_spawner.py)
-ambulance_seed: 200    # controls ambulance initialization order
+random_seed: 42 # controls random fleet generation (random_fleet.py)
+event_seed: 100 # controls Poisson event spawning (event_spawner.py)
+ambulance_seed: 200 # controls ambulance initialization order
 
 # Baseline experiment parameters
 n_stations: 5
@@ -177,12 +200,14 @@ headless: true
 - `sim_config.yaml` (the windowed interactive config) remains **unchanged**
 
 #### 2. Seed propagation
+
 - `event_spawner.py`: pass `event_seed` to its RNG at initialization
 - `ambulance.py` initialization: use `ambulance_seed` if any randomness is involved in setup
 - `random_fleet.py`: uses `random_seed` as shown in US-029
 - `ambulance.py`: currently deterministic, but `ambulance_seed` is provided to the simulation for future-proofing any randomized setup logic.
 
 #### 3. README update
+
 Add a **"Reproducing the Baseline (Sprint 8)"** section to `README.md`:
 
 ```markdown
