@@ -377,3 +377,66 @@
 21:42:25 [INFO    ] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=3217650510, pixel=(549, 492)
 21:42:25 [INFO    ] src.simulation.dispatcher: Rebalance tick 6099: 1 hotspot(s), 2 idle ambulance(s).
 21:42:25 [INFO    ] src.simulation.dispatcher: Ambulance 2 → REBALANCING toward hotspot 0 centroid node 3217650510.
+23:21:27 [[32mINFO[0m] src.simulation.sim_logger: Logging configured: level=INFO, file=outputs/sim.log
+23:21:28 [[32mINFO[0m] src.simulation.simulation_engine: Loading distance matrix from data/distance_matrix.npy ...
+23:21:28 [[32mINFO[0m] src.simulation.simulation_engine: Traffic model initialised (max_mult=2.5).
+23:21:28 [[32mINFO[0m] src.simulation.simulation_engine: Simulation starting: 5 ambulances, 10000 ticks, profile=None.
+23:21:30 [[32mINFO[0m] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=2422507457, pixel=(726, 522)
+23:21:30 [[32mINFO[0m] src.simulation.dispatcher: Rebalance tick 49: 1 hotspot(s), 2 idle ambulance(s).
+23:21:30 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 1 → REBALANCING toward hotspot 0 centroid node 2422507457.
+23:21:36 [[32mINFO[0m] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=588435519, pixel=(481, 377)
+23:21:36 [[32mINFO[0m] src.simulation.dispatcher: Rebalance tick 249: 1 hotspot(s), 2 idle ambulance(s).
+23:21:36 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 2 → REBALANCING toward hotspot 0 centroid node 588435519.
+23:21:38 [[32mINFO[0m] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=12352355200, pixel=(752, 233)
+23:21:38 [[32mINFO[0m] src.simulation.dispatcher: Rebalance tick 299: 1 hotspot(s), 2 idle ambulance(s).
+23:21:38 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 2 → REBALANCING toward hotspot 0 centroid node 12352355200.
+23:21:52 [[32mINFO[0m] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=12352353955, pixel=(735, 270)
+23:21:52 [[32mINFO[0m] src.simulation.dispatcher: Rebalance tick 699: 1 hotspot(s), 2 idle ambulance(s).
+23:21:52 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 2 → REBALANCING toward hotspot 0 centroid node 12352353955.
+23:21:57 [[32mINFO[0m] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=5785243553, pixel=(674, 213)
+23:21:57 [[32mINFO[0m] src.simulation.dispatcher: Rebalance tick 849: 1 hotspot(s), 2 idle ambulance(s).
+23:21:57 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 4 → REBALANCING toward hotspot 0 centroid node 5785243553.
+23:21:59 [[32mINFO[0m] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=10926883395, pixel=(916, 394)
+23:21:59 [[32mINFO[0m] src.simulation.dispatcher: Rebalance tick 899: 1 hotspot(s), 2 idle ambulance(s).
+23:21:59 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 2 → REBALANCING toward hotspot 0 centroid node 10926883395.
+23:22:59 [[32mINFO[0m] src.simulation.sim_logger: Logging configured: level=INFO, file=outputs/sim.log
+23:23:00 [[32mINFO[0m] src.simulation.simulation_engine: Loading distance matrix from data/distance_matrix.npy ...
+23:23:00 [[32mINFO[0m] src.simulation.simulation_engine: Traffic model initialised (max_mult=2.5).
+23:23:00 [[32mINFO[0m] src.simulation.simulation_engine: Simulation starting: 5 ambulances, 10000 ticks, profile=None.
+23:23:17 [[32mINFO[0m] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=5278958878, pixel=(1027, 295)
+23:23:17 [[32mINFO[0m] src.simulation.dispatcher: Rebalance tick 499: 1 hotspot(s), 1 idle ambulance(s).
+23:23:17 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 0 → REBALANCING toward hotspot 0 centroid node 5278958878.
+23:23:20 [[32mINFO[0m] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=300860837, pixel=(454, 449)
+23:23:20 [[32mINFO[0m] src.simulation.dispatcher: Rebalance tick 599: 1 hotspot(s), 2 idle ambulance(s).
+23:23:20 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 2 → REBALANCING toward hotspot 0 centroid node 300860837.
+23:23:22 [[32mINFO[0m] src.simulation.dispatcher: CONGESTION_DETECTED: Ambulance 3 re-routing (weight increase 39.4%, threshold 20.0%).
+23:23:22 [[32mINFO[0m] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=1884436468, pixel=(955, 371)
+23:23:22 [[32mINFO[0m] src.simulation.dispatcher: Rebalance tick 649: 1 hotspot(s), 2 idle ambulance(s).
+23:23:22 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 1 → REBALANCING toward hotspot 0 centroid node 1884436468.
+23:23:32 [[32mINFO[0m] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=588435528, pixel=(432, 546)
+23:23:32 [[32mINFO[0m] src.simulation.dispatcher: Rebalance tick 949: 1 hotspot(s), 1 idle ambulance(s).
+23:23:32 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 2 → REBALANCING toward hotspot 0 centroid node 588435528.
+23:23:39 [[32mINFO[0m] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=8407457904, pixel=(751, 292)
+23:23:39 [[32mINFO[0m] src.simulation.dispatcher: Rebalance tick 1149: 1 hotspot(s), 2 idle ambulance(s).
+23:23:39 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 2 → REBALANCING toward hotspot 0 centroid node 8407457904.
+23:23:43 [[32mINFO[0m] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=1249744159, pixel=(673, 423)
+23:23:43 [[32mINFO[0m] src.simulation.dispatcher: Rebalance tick 1249: 1 hotspot(s), 2 idle ambulance(s).
+23:23:43 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 1 → REBALANCING toward hotspot 0 centroid node 1249744159.
+23:23:47 [[32mINFO[0m] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=4836682662, pixel=(883, 418)
+23:23:47 [[32mINFO[0m] src.simulation.dispatcher: Rebalance tick 1349: 1 hotspot(s), 2 idle ambulance(s).
+23:23:47 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 3 → REBALANCING toward hotspot 0 centroid node 4836682662.
+23:23:53 [[32mINFO[0m] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=5280019863, pixel=(471, 275)
+23:23:53 [[32mINFO[0m] src.simulation.dispatcher: Rebalance tick 1499: 1 hotspot(s), 2 idle ambulance(s).
+23:23:53 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 4 → REBALANCING toward hotspot 0 centroid node 5280019863.
+23:24:00 [[32mINFO[0m] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=5652253127, pixel=(673, 332)
+23:24:00 [[32mINFO[0m] src.simulation.dispatcher: Rebalance tick 1699: 1 hotspot(s), 2 idle ambulance(s).
+23:24:00 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 3 → REBALANCING toward hotspot 0 centroid node 5652253127.
+23:24:09 [[32mINFO[0m] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=3217650489, pixel=(364, 370)
+23:24:09 [[32mINFO[0m] src.simulation.dispatcher: Rebalance tick 1949: 1 hotspot(s), 2 idle ambulance(s).
+23:24:09 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 3 → REBALANCING toward hotspot 0 centroid node 3217650489.
+23:24:43 [[32mINFO[0m] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=3677356981, pixel=(410, 711)
+23:24:43 [[32mINFO[0m] src.simulation.dispatcher: Rebalance tick 2949: 1 hotspot(s), 1 idle ambulance(s).
+23:24:43 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 2 → REBALANCING toward hotspot 0 centroid node 3677356981.
+23:25:00 [[32mINFO[0m] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=3217650509, pixel=(492, 423)
+23:25:00 [[32mINFO[0m] src.simulation.dispatcher: Rebalance tick 3449: 1 hotspot(s), 2 idle ambulance(s).
+23:25:01 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 4 → REBALANCING toward hotspot 0 centroid node 3217650509.
