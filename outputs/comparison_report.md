@@ -1,6 +1,6 @@
 # Fleet Comparison Report — AI vs Random Baseline (Sprint 9)
 
-*Generated automatically by `src/analyze_comparison.py` on 2026-05-09 08:05 UTC*
+*Generated automatically by `src/analyze_comparison.py` on 2026-05-09 14:24 UTC*
 
 ---
 
@@ -8,8 +8,8 @@
 
 | Metric | Baseline (Random) | AI Optimised | Δ |
 |--------|:-----------------:|:------------:|:---:|
-| Grand mean ART (ticks) | 25.73 | 23.09 | +10.3% |
-| Std dev across runs | 2.00 | 2.52 | — |
+| Grand mean ART (ticks) | 25.81 | 22.77 | +11.8% |
+| Std dev across runs | 2.02 | 1.91 | — |
 
 ---
 
@@ -17,13 +17,13 @@
 
 | Test | Value |
 |------|-------|
-| Paired t-statistic | 3.5834 |
-| Two-tailed p-value | 0.005899 |
-| Cohen's d | 1.1630 |
+| Paired t-statistic | 4.6855 |
+| Two-tailed p-value | 0.001143 |
+| Cohen's d | 1.5438 |
 | Significant (α=0.05) | Yes ✓ |
 
-The improvement is **statistically significant** (p=0.0059).
-A positive Cohen's d = 1.163 indicates the AI fleet outperforms the random baseline.
+The improvement is **statistically significant** (p=0.0011).
+A positive Cohen's d = 1.5438 indicates the AI fleet outperforms the random baseline.
 
 ---
 
@@ -58,4 +58,4 @@ A positive Cohen's d = 1.163 indicates the AI fleet outperforms the random basel
 
 ## Conclusion
 
-The GA-optimised fleet achieves a 10.28% reduction in mean ART compared to random placement. The improvement is statistically significant, providing strong evidence that intelligent station placement reduces emergency response times.
+The GA-optimised fleet achieves a 11.78% reduction in mean ART compared to random placement. The improvement is statistically significant, providing strong evidence that intelligent station placement reduces emergency response times.
