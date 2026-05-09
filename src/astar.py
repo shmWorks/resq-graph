@@ -1,18 +1,19 @@
 import heapq
 import math
 
-# Module-level cache: node_id → (lat_radians, lon_radians)
-# Populated lazily on first haversine call per node; shared across all A* calls.
+# Module-level cache: (graph_id, node_id) → (lat_radians, lon_radians)
+# Keyed by id(G) to prevent cross-graph node ID collisions between tests.
 _RAD_CACHE: dict = {}
 
 def _get_radians(G, node):
-    """Return (lat_rad, lon_rad) for node, caching the result."""
-    if node not in _RAD_CACHE:
-        _RAD_CACHE[node] = (
+    """Return (lat_rad, lon_rad) for node, caching per (graph_id, node_id)."""
+    key = (id(G), node)
+    if key not in _RAD_CACHE:
+        _RAD_CACHE[key] = (
             math.radians(float(G.nodes[node]['y'])),
             math.radians(float(G.nodes[node]['x'])),
         )
-    return _RAD_CACHE[node]
+    return _RAD_CACHE[key]
 
 
 def haversine(G, u, v):
