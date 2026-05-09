@@ -1,0 +1,45 @@
+# headless_sensitivity.yaml
+# Runs all three parameter sweeps in sequence.
+# Run with: python src/run_sensitivity.py --headless --config headless_sensitivity.yaml
+
+meta:
+  config_version: "1.0"
+  sprint: 10
+  description: "Sensitivity analysis sweeps — lambda, fleet size, HDBSCAN"
+
+simulation:
+  ticks: 1000
+  service_ticks: 10
+  num_runs_per_config: 5    # runs averaged per parameter value (speed vs precision tradeoff)
+
+seeds:
+  event_seed: 42            # base; offset by run_id per run
+  ambulance_seed: 0
+  random_seed: 99           # for baseline random fleet generation in sweeps
+
+sweeps:
+  lambda:
+    values: [0.01, 0.05, 0.1, 0.15]
+    fixed_num_ambulances: 5
+
+  fleet_size:
+    values: [3, 5, 7, 10]
+    fixed_lambda: 0.05
+
+  hdbscan:
+    min_cluster_size_values: [3, 5, 8]
+    min_samples_values: [2, 3, 5]
+    update_interval_values: [25, 50, 100]
+    fixed_lambda: 0.05
+    fixed_num_ambulances: 5
+
+rendering:
+  headless: true
+  target_fps: 0
+  screen_w: 1200
+  screen_h: 900
+
+output:
+  figures_dir:        "outputs/figures/"
+  sensitivity_dir:    "outputs/sensitivity/"
+  report_md:          "outputs/sensitivity_report.md"

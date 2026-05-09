@@ -63,6 +63,9 @@ class DispatcherBrain:
         graph,
         traffic         = None,   # TrafficModel | None  (Sprint 7)
         cfg:            dict = None,  # runtime config dict (Sprint 7)
+        hdbscan_min_cluster_size: int = 5,
+        hdbscan_min_samples: int = 3,
+        rebalance_interval: int = 50,
     ):
         self.ambulances      = ambulances
         self.distance_matrix = distance_matrix
@@ -85,8 +88,8 @@ class DispatcherBrain:
         hdbscan_min_smp = self._cfg.get("HDBSCAN_MIN_SAMPLES", 2)
         self._clusterer = DemandClusterer(
             node_positions   = node_positions,
-            min_cluster_size = hdbscan_min_cs,
-            min_samples      = hdbscan_min_smp,
+            min_cluster_size = hdbscan_min_cluster_size,
+            min_samples      = hdbscan_min_samples,
         )
         # Public: renderer reads this to draw hotspot overlays
         self.hotspots: list[Hotspot] = []
@@ -98,6 +101,23 @@ class DispatcherBrain:
         self._reroute_threshold = float(
             self._cfg.get("REROUTE_THRESHOLD", _DEFAULT_REROUTE_THRESHOLD)
         )
+        self._rebalance_interval = rebalance_interval
+
+        # Sprint 10 tracking
+        self.rebalance_count = 0
+        self.total_clusters_found = 0
+        self.total_noise_points = 0
+        self.total_points_clustered = 0
+
+    @property
+    def mean_clusters_per_rebalance(self) -> float:
+        if self.rebalance_count == 0: return 0.0
+        return self.total_clusters_found / self.rebalance_count
+
+    @property
+    def mean_noise_fraction(self) -> float:
+        if self.total_points_clustered == 0: return 0.0
+        return self.total_noise_points / self.total_points_clustered
 
     # ── Main tick entry point ──────────────────────────────────────────────────
 
@@ -158,7 +178,7 @@ class DispatcherBrain:
 
         # 5. Periodic rebalancing
         self._ticks_since_rebalance += 1
-        if self._ticks_since_rebalance >= REBALANCE_INTERVAL:
+        if self._ticks_since_rebalance >= self._rebalance_interval:
             self.rebalance_fleet(current_tick)
             self._ticks_since_rebalance = 0
 
@@ -245,6 +265,17 @@ class DispatcherBrain:
         """
         # Run clustering
         self.hotspots = self._clusterer.run(self.active_events)
+        
+        # Sprint 10 tracking
+        self.rebalance_count += 1
+        self.total_clusters_found += len(self.hotspots)
+        n_points = len(self.active_events)
+        if n_points > 0:
+            self.total_points_clustered += n_points
+            # We need the noise count from HDBSCAN directly. 
+            # For now, let's estimate it from the sum of cluster members.
+            clustered_count = sum(len(hs.member_pixel_positions) for hs in self.hotspots)
+            self.total_noise_points += (n_points - clustered_count)
 
         if not self.hotspots:
             logger.debug("Rebalance tick %d: no hotspots found. Checking for base return.", current_tick)

@@ -247,3 +247,82 @@ def plot_art_timeseries(results_df) -> str:
     plt.close(fig)
     print(f"  [US-031] Saved ART time-series -> {out}")
     return out
+
+
+def plot_sensitivity_lambda(df, out_path: str):
+    import numpy as np
+    fig, ax = plt.subplots(figsize=(8, 5))
+    _apply_dark_style(fig, ax)
+
+    bas = df[df["fleet_type"] == "baseline"]
+    ai = df[df["fleet_type"] == "ai"]
+
+    ax.plot(bas["lambda"], bas["mean_art"], "o-", color=_ACCENT2, label="Baseline (Random)")
+    ax.fill_between(bas["lambda"], bas["mean_art"] - bas["std_art"], bas["mean_art"] + bas["std_art"], color=_ACCENT2, alpha=0.2)
+
+    ax.plot(ai["lambda"], ai["mean_art"], "s-", color=_ACCENT, label="AI (Optimised)")
+    ax.fill_between(ai["lambda"], ai["mean_art"] - ai["std_art"], ai["mean_art"] + ai["std_art"], color=_ACCENT, alpha=0.2)
+
+    ax.set_xlabel("Event Rate (λ)")
+    ax.set_ylabel("Mean ART (ticks)")
+    ax.set_title("Sensitivity: ART vs Event Rate (Lambda)")
+    ax.legend()
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_sensitivity_fleet(df, out_path: str):
+    fig, ax = plt.subplots(figsize=(8, 5))
+    _apply_dark_style(fig, ax)
+
+    bas = df[df["fleet_type"] == "baseline"]
+    ai = df[df["fleet_type"] == "ai"]
+
+    ax.errorbar(bas["num_ambulances"], bas["mean_art"], yerr=bas["std_art"], fmt="o-", color=_ACCENT2, label="Baseline")
+    ax.errorbar(ai["num_ambulances"], ai["mean_art"], yerr=ai["std_art"], fmt="s-", color=_ACCENT, label="AI Fleet")
+
+    ax.set_xlabel("Number of Ambulances")
+    ax.set_ylabel("Mean ART (ticks)")
+    ax.set_title("Sensitivity: ART vs Fleet Size")
+    ax.legend()
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_sensitivity_hdbscan_art(df, out_path: str):
+    # Heatmap style 
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=True)
+    intervals = df["rebalance_interval"].unique()
+
+    for i, interval in enumerate(intervals):
+        ax = axes[i]
+        subset = df[df["rebalance_interval"] == interval]
+        if subset.empty: continue
+        pivot = subset.pivot(index="min_cluster_size", columns="min_samples", values="mean_art")
+        im = ax.imshow(pivot.values, cmap="viridis_r", aspect="auto")
+        ax.set_title(f"Interval = {interval}")
+        ax.set_xticks(range(len(pivot.columns)))
+        ax.set_xticklabels(pivot.columns)
+        if i == 0:
+            ax.set_yticks(range(len(pivot.index)))
+            ax.set_yticklabels(pivot.index)
+            ax.set_ylabel("min_cluster_size")
+        ax.set_xlabel("min_samples")
+    
+    fig.colorbar(im, ax=axes.ravel().tolist(), label="Mean ART")
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_sensitivity_hdbscan_churn(df, out_path: str):
+    fig, ax = plt.subplots(figsize=(8, 5))
+    _apply_dark_style(fig, ax)
+
+    sc = ax.scatter(df["mean_rebalance_count"], df["mean_art"], c=df["rebalance_interval"], cmap="cool", s=100, alpha=0.8)
+    fig.colorbar(sc, label="Rebalance Interval")
+    
+    ax.set_xlabel("Mean Rebalance Count (Churn proxy)")
+    ax.set_ylabel("Mean ART (ticks)")
+    ax.set_title("Trade-off: ART vs Rebalance Churn")
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)

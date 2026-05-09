@@ -400,7 +400,7 @@ class PygameRenderer:
             if ambulances else 0
         )
 
-        hud_w, hud_h = 290, 220
+        hud_w, hud_h = 290, 260
         hud_surf     = pygame.Surface((hud_w, hud_h), pygame.SRCALPHA)
         hud_surf.fill((*HUD_BG_COLOUR, 200))
 
@@ -411,6 +411,8 @@ class PygameRenderer:
             f"Avg Response Time: {art:.1f} ticks",
             f"Events Resolved:   {total_events}",
             f"Fleet Utilisation: {utilisation}%",
+            f"Lambda (λ):        {state.lambda_rate:.2f}",
+            f"Last HDBSCAN:      tick {state.last_hdbscan_tick}",
             "",
             f"  [H] Hotspots: {'ON ' if show_hotspots else 'OFF'}",
             f"  [T] Traffic:  {'ON ' if show_traffic  else 'OFF'}",

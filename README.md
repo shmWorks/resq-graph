@@ -2,7 +2,7 @@
 
 ResQ-Graph is an agent-based graph simulation for emergency ambulance dispatch. It models a fleet of ambulances navigating a city road network (represented as a graph) to respond to dynamically generated emergency events. The project aims to simulate, visualize, and optimize response times using smart dispatch algorithms, dynamic fleet rebalancing, and realistic traffic models.
 
-This repository is currently up-to-date through **Sprint 9**.
+This repository is currently up-to-date through **Sprint 10**.
 
 ## Core Architecture & Components
 
@@ -59,13 +59,17 @@ resq-graph/
 │   ├── figures/                 # Auto-generated matplotlib plots (Sprint 8)
 │   ├── baseline_results.csv     # Sprint 8: per-run baseline ART results
 │   ├── baseline_report.md       # Sprint 8: auto-generated analysis report
-│   └── random_fleet_log.json    # Sprint 8: placement log for reproducibility
+│   ├── random_fleet_log.json    # Sprint 8: placement log for reproducibility
+│   └── sensitivity/             # Sprint 10: sensitivity sweep results (CSV + Plots)
 ├── src/
 │   ├── main.py                  # Entry point for the simulation
 │   ├── config.py                # Hyperparameters, paths, and visual constants
 │   ├── sim_config_loader.py     # YAML configuration parser
 │   ├── run_baseline.py          # Sprint 8: headless batch baseline runner
 │   ├── analyze_baseline.py      # Sprint 8: analysis & report generator
+│   ├── run_ai_fleet.py          # Sprint 9: GA fleet runner
+│   ├── run_sensitivity.py       # Sprint 10: headless sensitivity sweep runner
+│   ├── analyze_sensitivity.py    # Sprint 10: sensitivity report generator
 │   ├── astar.py                 # Core A* navigation algorithm
 │   ├── distance_matrix.py       # Distance matrix computation script
 │   ├── intelligence/
@@ -86,7 +90,9 @@ resq-graph/
 │       └── traffic.py           # Dynamic traffic congestion model
 ├── tests/                       # Comprehensive Pytest test suite
 ├── sim_config.yaml              # Centralized simulation parameter configuration
-└── headless_baseline.yaml       # Sprint 8: reproducible headless batch config
+├── headless_baseline.yaml       # Sprint 8: reproducible headless batch config
+├── headless_ai.yaml             # Sprint 9: reproducible AI fleet config
+└── headless_sensitivity.yaml    # Sprint 10: parameter sweep configuration
 ```
 
 ## How to Run
@@ -102,6 +108,9 @@ python src/main.py
 - Press **H** to toggle the hotspot overlay.
 - Press **T** to toggle the traffic congestion overlay.
 - Press **L** to toggle the full log history overlay.
+- Press **+** / **-** to adjust the live Poisson event rate (Lambda).
+- Press **A** to inject a new ambulance into the active simulation.
+- Press **K** to trigger a manual HDBSCAN hotspot rebalance.
 
 **Run headless (no window):**
 ```bash
@@ -176,6 +185,43 @@ python src/analyze_comparison.py
 - **AI Fleet ART**: ~23.1 ticks
 - **Improvement**: **+10.3%**
 - **Statistical Significance**: Yes (p < 0.01)
+
+---
+
+## Sensitivity Analysis (Sprint 10)
+
+Sprint 10 introduced a robust framework for sweeping simulation parameters to find optimal operational points.
+
+To reproduce the Sensitivity Analysis:
+
+1. Run the headless sweep (this handles Lambda, Fleet Size, and HDBSCAN parameters):
+```bash
+python src/run_sensitivity.py --headless --config headless_sensitivity.yaml
+```
+
+2. Generate the report and visualizations:
+```bash
+python src/analyze_sensitivity.py
+```
+
+3. View the results:
+```
+outputs/sensitivity_report.md
+```
+
+### Key Learnings (Sprint 10)
+### Key Findings (Sprint 10)
+Through our comprehensive 215-run sweep, we discovered exactly how the ResQ-Graph system handles different "stress levels":
+
+- **Event Rate (Lambda):** The AI fleet is consistently **~10% faster** than the random baseline during normal city demand. However, when the city is overwhelmed (very high accident rates), both fleets eventually slow down as ambulances become fully utilized.
+- **Fleet Scaling:** We found a "sweet spot" at **7 ambulances**. Increasing from 3 to 5 ambulances cuts response times by nearly **40%**, but adding more than 7 ambulances provides significantly smaller gains.
+- **Optimal Intelligence:** Our most efficient cluster settings were found to be `min_cluster_size=5` and `min_samples=5`. Running a rebalance every **25 ticks** (rather than 50 or 100) proved most effective at keeping ambulances near predicted hotspots.
+
+| Setting | Value | Why? |
+|---------|-------|------|
+| **Best HDBSCAN Cluster Size** | 5 | Balances precision with enough sample size. |
+| **Best Rebalance Interval** | 25 Ticks | Keeps the fleet "agile" and responsive to new data. |
+| **Recommended Fleet Size** | 7 | Best performance-to-cost ratio for this map. |
 
 ---
 
