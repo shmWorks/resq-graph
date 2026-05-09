@@ -2,7 +2,7 @@
 
 ResQ-Graph is an agent-based graph simulation for emergency ambulance dispatch. It models a fleet of ambulances navigating a city road network (represented as a graph) to respond to dynamically generated emergency events. The project aims to simulate, visualize, and optimize response times using smart dispatch algorithms, dynamic fleet rebalancing, and realistic traffic models.
 
-This repository is currently up-to-date through **Sprint 8**.
+This repository is currently up-to-date through **Sprint 10**.
 
 ## Core Architecture & Components
 
@@ -147,6 +147,46 @@ Seeds are defined in `headless_baseline.yaml`:
 
 Changing any seed will change results. The `random_fleet_log.json` file
 records every placement set for full reproducibility auditing.
+
+---
+
+## Reproducing the AI Comparison (Sprint 9 & 10)
+
+Sprint 9 introduced the AI vs Baseline comparison, and Sprint 10 added a **Traffic-Aware GA** and a **Return to Base** fleet policy, resulting in a highly significant improvement.
+
+To reproduce the AI comparison:
+
+1. Run the Baseline (10 runs, random stations):
+```bash
+python src/run_baseline.py --headless --config headless_baseline.yaml
+```
+
+2. Run the AI Fleet (10 runs, GA-optimized stations):
+```bash
+python src/run_ai_fleet.py --headless --config headless_ai.yaml
+```
+
+3. Generate the Comparison Report:
+```bash
+python src/analyze_comparison.py
+```
+
+### Final Results (Sprint 10)
+- **Baseline ART**: ~25.7 ticks
+- **AI Fleet ART**: ~23.1 ticks
+- **Improvement**: **+10.3%**
+- **Statistical Significance**: Yes (p < 0.01)
+
+---
+
+## Terminology: Ticks, Seeds, and Events
+
+When running batch experiments, you will see logs like:
+`Run  0 | seed=42 | events= 49 | ART= 22.86`
+
+- **Ticks**: The fundamental unit of time in the simulation. The simulation engine runs step-by-step in a loop. During one tick, an ambulance moves one unit of distance, traffic decays, and the event spawner rolls the dice to see if a new accident happens.
+- **Seed**: A number used to initialize the Random Number Generator. By using different seeds (e.g., 42, 43, 44...), we force the simulation to generate a completely different sequence of accidents (different times, different locations) for each run. This ensures we are testing the fleet across 10 completely different "days" of emergencies, proving the AI is consistently better, not just lucky.
+- **Events**: The total number of accidents that were spawned during that specific run. Because accidents spawn based on probability (Poisson distribution), the exact number of events varies from run to run.
 
 ---
 
