@@ -144,6 +144,8 @@ class SimulationEngine:
         self.renderer = None
         self.screen = None
         self.clock = None
+        # US-048: reuse this dict each tick instead of creating a new one
+        self._amb_pos_cache: dict = {a.id: a.pixel_pos for a in self.ambulances}
 
     def _init_pygame(self):
         if self.headless:
@@ -164,8 +166,9 @@ class SimulationEngine:
         show_traffic = False
         show_log = False
         
-        # log_buffer if needed (keeping it simple for now)
-        log_buffer = SimLogBuffer(capacity=200)
+        # US-048: scale log buffer capacity for long runs to limit memory
+        buffer_capacity = 50 if self.ticks > 5000 else 200
+        log_buffer = SimLogBuffer(capacity=buffer_capacity)
         log_buffer.attach()
 
         while running and self.state.current_tick < self.ticks:
@@ -233,11 +236,16 @@ class SimulationEngine:
 
         if self.traffic is not None:
             self.traffic.update(self.dispatcher.active_events + new_accidents, self.state.current_tick)
-            if self.renderer:
+            # US-047: only invalidate traffic cache every 5 ticks — congestion changes slowly
+            if self.renderer and self.state.current_tick % 5 == 0:
                 self.renderer.invalidate_traffic_cache()
 
         self.dispatcher.tick(new_accidents, self.state.current_tick)
-        self.state.ambulance_positions = {a.id: a.pixel_pos for a in self.ambulances}
+
+        # US-048: mutate existing dict instead of creating a new one per tick
+        for a in self.ambulances:
+            self._amb_pos_cache[a.id] = a.pixel_pos
+        self.state.ambulance_positions = self._amb_pos_cache
         self.state.current_tick += 1
 
     def add_ambulance(self, start_node: int):

@@ -191,9 +191,12 @@ class SimLogBuffer:
         self._handler = handler
 
     def tail(self, n: int = 5) -> list[str]:
-        """Return the last *n* log lines (most recent last)."""
-        items = list(self._deque)
-        return items[-n:]
+        """Return the last *n* log lines without copying the full deque."""
+        dq = self._deque
+        length = len(dq)
+        if n >= length:
+            return list(dq)
+        return [dq[length - n + i] for i in range(n)]
 
     def all(self) -> list[str]:
         """Return all buffered log lines in chronological order."""

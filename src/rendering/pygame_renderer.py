@@ -113,6 +113,14 @@ class PygameRenderer:
         # ── Sprint 6: pulse animation state ───────────────────────────────
         self._pulse_tick = 0
 
+        # ── Sprint 12: sprite cache (US-047) ─────────────────────────────
+        # Key: (state_value, amb_id) → pre-rendered Surface with convert_alpha()
+        self._sprite_cache: dict[tuple, pygame.Surface] = {}
+
+        # ── Sprint 12: HUD cache (US-047) ────────────────────────────────
+        self._hud_cache:     pygame.Surface | None = None
+        self._hud_cache_key: tuple | None = None
+
     def _to_screen(self, pos: tuple) -> tuple:
         """Map raw map coordinates to current screen pixels."""
         return (
@@ -133,21 +141,13 @@ class PygameRenderer:
         show_log:            bool = False,
         log_buffer           = None,
         current_tick:        int  = 0,
+        debug_timing:        bool = False,   # US-045: per-layer ms timing
     ) -> None:
-        """Render one frame.
+        """Render one frame."""
+        import time as _time
+        _t = _time.perf_counter if debug_timing else None
+        _ts: dict = {}
 
-        Parameters
-        ----------
-        state               SimulationState (tick, paused flag).
-        ambulances          All Ambulance objects.
-        dispatcher          DispatcherBrain – provides active_events, hotspots, metrics.
-        show_metrics_panel  Whether to draw the detailed M-key overlay.
-        show_hotspots       H key: show/hide hotspot layer.
-        show_traffic        T key: show/hide congestion heatmap.
-        show_log            L key: expand/collapse full log history overlay.
-        log_buffer          SimLogBuffer – for on-screen log strip.
-        current_tick        Used for pulsing animation.
-        """
         active_events = dispatcher.active_events if dispatcher else []
         hud_data      = (
             dispatcher.metrics_tracker.get_hud_data() if dispatcher else {}
@@ -158,44 +158,64 @@ class PygameRenderer:
         self._pulse_tick = current_tick
 
         # ── Layer 0: Background ────────────────────────────────────────────
+        if debug_timing: _ts['t0'] = _t()
         self.screen.fill((26, 26, 46))
         self.screen.blit(self.background, (self.padding, self.padding))
+        if debug_timing: _ts['bg'] = (_t() - _ts['t0']) * 1000
 
         # ── Layer 1: Congestion heatmap ────────────────────────────────────
+        if debug_timing: _ts['t1'] = _t()
         if show_traffic and traffic is not None:
             self._draw_traffic_heatmap(traffic)
+        if debug_timing: _ts['traffic'] = (_t() - _ts['t1']) * 1000
 
         # ── Layer 2: Accident markers ──────────────────────────────────────
+        if debug_timing: _ts['t2'] = _t()
         for event in active_events:
             self._draw_accident(self._to_screen(event.pixel_pos))
+        if debug_timing: _ts['events'] = (_t() - _ts['t2']) * 1000
 
         # ── Layer 3 & 4: Hotspot overlays ─────────────────────────────────
+        if debug_timing: _ts['t3'] = _t()
         if show_hotspots and hotspots:
             self._draw_hotspot_hulls(hotspots)
             self._draw_hotspot_circles(hotspots, current_tick)
+        if debug_timing: _ts['hotspots'] = (_t() - _ts['t3']) * 1000
 
         # ── Layer 5: Ambulance path polylines ─────────────────────────────
+        if debug_timing: _ts['t5'] = _t()
         self.draw_ambulance_paths(ambulances)
+        if debug_timing: _ts['paths'] = (_t() - _ts['t5']) * 1000
 
         # ── Layer 6: Ambulance sprites ────────────────────────────────────
+        if debug_timing: _ts['t6'] = _t()
         for amb in ambulances:
             self._draw_ambulance(amb)
+        if debug_timing: _ts['sprites'] = (_t() - _ts['t6']) * 1000
 
         # ── Layer 7: HUD panel ─────────────────────────────────────────────
+        if debug_timing: _ts['t7'] = _t()
         self._draw_hud(state, ambulances, idle_count, hud_data, show_hotspots, show_traffic)
+        if debug_timing: _ts['hud'] = (_t() - _ts['t7']) * 1000
 
         # ── Layer 8: Metrics panel overlay ────────────────────────────────
         if show_metrics_panel:
             self.draw_metrics_panel(hud_data, len(active_events))
 
-        # ── Layer 9: Log strip ─────────────────────────────────────────────
-        # (Hidden by default to keep UI clean)
-        # if log_buffer is not None:
-        #    self._draw_log_strip(log_buffer)
-
         # ── Layer 10: Full log history overlay ────────────────────────────
         if show_log and log_buffer is not None:
             self._draw_log_history(log_buffer)
+
+        if debug_timing:
+            total = sum(v for k, v in _ts.items() if not k.startswith('t'))
+            print(f"[Render] bg={_ts.get('bg',0):.1f}ms "
+                  f"traffic={_ts.get('traffic',0):.1f}ms "
+                  f"events={_ts.get('events',0):.1f}ms "
+                  f"hotspots={_ts.get('hotspots',0):.1f}ms "
+                  f"paths={_ts.get('paths',0):.1f}ms "
+                  f"sprites={_ts.get('sprites',0):.1f}ms "
+                  f"hud={_ts.get('hud',0):.1f}ms "
+                  f"total={total:.1f}ms")
 
 
     # ── Layer 1: Traffic heatmap (US-025) ──────────────────────────────────────
@@ -368,19 +388,28 @@ class PygameRenderer:
     # ── Layer 6: Ambulances ────────────────────────────────────────────────────
 
     def _draw_ambulance(self, amb) -> None:
+        """Blit a cached sprite for this ambulance (US-047: convert_alpha cache)."""
+        key = (amb.state.value, amb.id)
+        if key not in self._sprite_cache:
+            surf = pygame.Surface((28, 20), pygame.SRCALPHA)
+            if amb.state == AmbulanceState.IDLE:
+                colour = COLOUR_IDLE
+            elif amb.state == AmbulanceState.IN_TRANSIT:
+                colour = COLOUR_TRANSIT
+            elif amb.state == AmbulanceState.REBALANCING:
+                colour = COLOUR_REBALANCING
+            else:
+                colour = COLOUR_ON_SCENE
+            pygame.draw.circle(surf, colour, (8, 10), 8)
+            pygame.draw.circle(surf, (0, 0, 0), (8, 10), 8, 1)
+            label = self.font_small.render(str(amb.id), True, (255, 255, 255))
+            surf.blit(label, (18, 3))
+            try:
+                self._sprite_cache[key] = surf.convert_alpha()
+            except Exception:
+                self._sprite_cache[key] = surf
         x, y = self._to_screen(amb.pixel_pos)
-        if amb.state == AmbulanceState.IDLE:
-            colour = COLOUR_IDLE
-        elif amb.state == AmbulanceState.IN_TRANSIT:
-            colour = COLOUR_TRANSIT
-        elif amb.state == AmbulanceState.REBALANCING:
-            colour = COLOUR_REBALANCING
-        else:
-            colour = COLOUR_ON_SCENE
-        pygame.draw.circle(self.screen, colour, (x, y), 8)
-        pygame.draw.circle(self.screen, (0, 0, 0), (x, y), 8, 1)
-        label = self.font_small.render(str(amb.id), True, (255, 255, 255))
-        self.screen.blit(label, (x + 10, y - 8))
+        self.screen.blit(self._sprite_cache[key], (x - 8, y - 10))
 
     # ── Layer 7: HUD panel ─────────────────────────────────────────────────────
 
@@ -400,34 +429,42 @@ class PygameRenderer:
             if ambulances else 0
         )
 
-        hud_w, hud_h = 290, 260
-        hud_surf     = pygame.Surface((hud_w, hud_h), pygame.SRCALPHA)
-        hud_surf.fill((*HUD_BG_COLOUR, 200))
+        # US-047: only rebuild HUD surface when data changes
+        hud_key = (state.current_tick, idle_count, round(art, 2), total_events,
+                   state.paused, show_hotspots, show_traffic)
+        if hud_key != self._hud_cache_key or self._hud_cache is None:
+            hud_w, hud_h = 290, 260
+            hud_surf     = pygame.Surface((hud_w, hud_h), pygame.SRCALPHA)
+            hud_surf.fill((*HUD_BG_COLOUR, 200))
 
-        lines = [
-            f"Tick:              {state.current_tick}",
-            f"Active Events:     {len(getattr(state, 'active_events', []))}",
-            f"Idle Ambulances:   {idle_count} / {len(ambulances)}",
-            f"Avg Response Time: {art:.1f} ticks",
-            f"Events Resolved:   {total_events}",
-            f"Fleet Utilisation: {utilisation}%",
-            f"Lambda (λ):        {state.lambda_rate:.2f}",
-            f"Last HDBSCAN:      tick {state.last_hdbscan_tick}",
-            "",
-            f"  [H] Hotspots: {'ON ' if show_hotspots else 'OFF'}",
-            f"  [T] Traffic:  {'ON ' if show_traffic  else 'OFF'}",
-            f"  [M] Metrics   [L] Log",
-        ]
-        if state.paused:
-            lines.insert(0, "  [ ⏸  PAUSED ]")
+            lines = [
+                f"Tick:              {state.current_tick}",
+                f"Active Events:     {len(getattr(state, 'active_events', []))}",
+                f"Idle Ambulances:   {idle_count} / {len(ambulances)}",
+                f"Avg Response Time: {art:.1f} ticks",
+                f"Events Resolved:   {total_events}",
+                f"Fleet Utilisation: {utilisation}%",
+                f"Lambda (λ):        {state.lambda_rate:.2f}",
+                f"Last HDBSCAN:      tick {state.last_hdbscan_tick}",
+                "",
+                f"  [H] Hotspots: {'ON ' if show_hotspots else 'OFF'}",
+                f"  [T] Traffic:  {'ON ' if show_traffic  else 'OFF'}",
+                f"  [M] Metrics   [L] Log",
+            ]
+            if state.paused:
+                lines.insert(0, "  [ ⏸  PAUSED ]")
 
-        y_off = 10
-        for line in lines:
-            surf = self.font.render(line, True, HUD_TEXT_COLOUR)
-            hud_surf.blit(surf, (12, y_off))
-            y_off += 20
+            y_off = 10
+            for line in lines:
+                surf = self.font.render(line, True, HUD_TEXT_COLOUR)
+                hud_surf.blit(surf, (12, y_off))
+                y_off += 20
 
-        self.screen.blit(hud_surf, (self.screen.get_width() - hud_w - 10, 10))
+            self._hud_cache     = hud_surf
+            self._hud_cache_key = hud_key
+
+        self.screen.blit(self._hud_cache,
+                         (self.screen.get_width() - 300, 10))
 
     # ── Layer 8: Metrics panel ─────────────────────────────────────────────────
 

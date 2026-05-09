@@ -14,24 +14,24 @@ Public API
 
     path = astar_traffic(graph, start, goal, traffic_model)
 """
-from __future__ import annotations
-
 import heapq
 import math
 from typing import TYPE_CHECKING
+
+# Re-use the same radians cache populated by astar.py to avoid redundant trig
+from src.astar import _get_radians
 
 if TYPE_CHECKING:
     from src.simulation.traffic import TrafficModel
 
 
 def _haversine(G, u: int, v: int) -> float:
-    """Geodesic heuristic (same formula as the base astar.py)."""
-    lat1, lon1 = float(G.nodes[u]["y"]), float(G.nodes[u]["x"])
-    lat2, lon2 = float(G.nodes[v]["y"]), float(G.nodes[v]["x"])
+    """Geodesic heuristic using shared radians cache."""
+    phi1, lam1 = _get_radians(G, u)
+    phi2, lam2 = _get_radians(G, v)
     R = 6_371_000
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi   = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
+    dphi    = phi2 - phi1
+    dlambda = lam2 - lam1
     a = (
         math.sin(dphi / 2) ** 2
         + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
@@ -84,13 +84,16 @@ def astar_traffic(
     heapq.heappush(open_set, (0.0, start))
 
     came_from: dict[int, int] = {}
-    g_score: dict[int, float] = {node: float("inf") for node in G.nodes}
-    g_score[start] = 0.0
-    f_score: dict[int, float] = {node: float("inf") for node in G.nodes}
-    f_score[start] = _haversine(G, start, goal)
+    # Sparse dicts: avoids O(N) pre-allocation over the entire graph
+    g_score: dict[int, float] = {start: 0.0}
+    closed:  set[int]         = set()
 
     while open_set:
         _, current = heapq.heappop(open_set)
+
+        if current in closed:
+            continue
+        closed.add(current)
 
         if current == goal:
             path: list[int] = []
@@ -100,13 +103,16 @@ def astar_traffic(
             path.append(start)
             return path[::-1]
 
+        g_cur = g_score[current]
         for neighbour in G.neighbors(current):
+            if neighbour in closed:
+                continue
             cost = _edge_cost(current, neighbour)
-            tentative_g = g_score[current] + cost
-            if tentative_g < g_score[neighbour]:
+            tentative_g = g_cur + cost
+            if tentative_g < g_score.get(neighbour, float('inf')):
                 came_from[neighbour] = current
                 g_score[neighbour]   = tentative_g
-                f_score[neighbour]   = tentative_g + _haversine(G, neighbour, goal)
-                heapq.heappush(open_set, (f_score[neighbour], neighbour))
+                f = tentative_g + _haversine(G, neighbour, goal)
+                heapq.heappush(open_set, (f, neighbour))
 
     return None

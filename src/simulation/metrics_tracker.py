@@ -50,6 +50,7 @@ class MetricsTracker:
         self._buffer:        list[dict]  = []
         self._tick_history:  deque       = deque(maxlen=200)  # HUD sparkline
         self._ticks_since_flush          = 0
+        self._rt_sum:        float       = 0.0   # US-048: running sum for O(1) ART
 
         # Ensure output directory exists
         os.makedirs(os.path.dirname(csv_path), exist_ok=True)
@@ -72,6 +73,7 @@ class MetricsTracker:
         """
         rt = arrival_tick - spawn_tick
         self.response_times.append(rt)
+        self._rt_sum += rt   # US-048: keep running total
         self._buffer.append({
             "event_id":      event_id,
             "spawn_tick":    spawn_tick,
@@ -89,9 +91,9 @@ class MetricsTracker:
 
     @property
     def art(self) -> float:
-        """Average Response Time across all resolved events."""
+        """Average Response Time across all resolved events. O(1) via running sum."""
         return (
-            sum(self.response_times) / len(self.response_times)
+            self._rt_sum / len(self.response_times)
             if self.response_times
             else 0.0
         )

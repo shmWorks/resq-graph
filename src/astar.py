@@ -1,13 +1,26 @@
 import heapq
 import math
 
+# Module-level cache: node_id → (lat_radians, lon_radians)
+# Populated lazily on first haversine call per node; shared across all A* calls.
+_RAD_CACHE: dict = {}
+
+def _get_radians(G, node):
+    """Return (lat_rad, lon_rad) for node, caching the result."""
+    if node not in _RAD_CACHE:
+        _RAD_CACHE[node] = (
+            math.radians(float(G.nodes[node]['y'])),
+            math.radians(float(G.nodes[node]['x'])),
+        )
+    return _RAD_CACHE[node]
+
+
 def haversine(G, u, v):
-    lat1, lon1 = float(G.nodes[u]['y']), float(G.nodes[u]['x'])
-    lat2, lon2 = float(G.nodes[v]['y']), float(G.nodes[v]['x'])
+    phi1, lam1 = _get_radians(G, u)
+    phi2, lam2 = _get_radians(G, v)
     R = 6371000
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
+    dphi = phi2 - phi1
+    dlambda = lam2 - lam1
     a = math.sin(dphi / 2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2)**2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
@@ -31,16 +44,19 @@ def astar(G, start, goal):
         return None
 
     open_set = []
-    heapq.heappush(open_set, (0, start))
+    heapq.heappush(open_set, (0.0, start))
 
-    came_from = {}
-    g_score = {node: float('inf') for node in G.nodes}
-    g_score[start] = 0
-    f_score = {node: float('inf') for node in G.nodes}
-    f_score[start] = haversine(G, start, goal)
+    came_from: dict = {}
+    # Sparse dicts: only visited nodes stored (avoids O(N) pre-allocation)
+    g_score: dict = {start: 0.0}
+    closed: set = set()
 
     while open_set:
         _, current = heapq.heappop(open_set)
+
+        if current in closed:
+            continue
+        closed.add(current)
 
         if current == goal:
             path = []
@@ -50,15 +66,18 @@ def astar(G, start, goal):
             path.append(start)
             return path[::-1]
 
+        g_cur = g_score[current]
         for neighbor in G.neighbors(current):
+            if neighbor in closed:
+                continue
             edge_data = G[current][neighbor]
             weight = min(float(d.get('length', 1)) for d in edge_data.values())
-            tentative_g = g_score[current] + weight
+            tentative_g = g_cur + weight
 
-            if tentative_g < g_score[neighbor]:
+            if tentative_g < g_score.get(neighbor, float('inf')):
                 came_from[neighbor] = current
                 g_score[neighbor] = tentative_g
-                f_score[neighbor] = tentative_g + haversine(G, neighbor, goal)
-                heapq.heappush(open_set, (f_score[neighbor], neighbor))
+                f = tentative_g + haversine(G, neighbor, goal)
+                heapq.heappush(open_set, (f, neighbor))
 
     return None

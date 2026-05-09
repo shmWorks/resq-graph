@@ -596,3 +596,15 @@
 18:06:32 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 4 → RETURNING TO BASE node 100148878.
 18:06:33 [[32mINFO[0m] src.simulation.metrics_tracker: Summary CSV written to outputs/metrics_summary.csv
 18:06:33 [[32mINFO[0m] src.sim_config_loader: Loaded base config from headless_ai.yaml
+18:54:25 [[32mINFO[0m] src.simulation.sim_logger: Logging configured: level=INFO, file=outputs/sim.log
+18:54:25 [[32mINFO[0m] src.simulation.simulation_engine: Loading distance matrix from data/distance_matrix.npy ...
+18:54:27 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 0 → RETURNING TO BASE node 83666734.
+18:54:27 [[32mINFO[0m] src.simulation.metrics_tracker: Summary CSV written to outputs/metrics_summary.csv
+18:54:27 [[32mINFO[0m] src.sim_config_loader: Loaded base config from headless_ai.yaml
+19:06:39 [[32mINFO[0m] src.simulation.sim_logger: Logging configured: level=INFO, file=outputs/sim.log
+19:06:39 [[32mINFO[0m] src.simulation.simulation_engine: Loading distance matrix from data/distance_matrix.npy ...
+19:06:42 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 0 → RETURNING TO BASE node 83666734.
+19:06:44 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 1 → RETURNING TO BASE node 83666735.
+19:06:44 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 4 → RETURNING TO BASE node 100148878.
+19:06:44 [[32mINFO[0m] src.simulation.metrics_tracker: Summary CSV written to outputs/metrics_summary.csv
+19:06:44 [[32mINFO[0m] src.sim_config_loader: Loaded base config from headless_ai.yaml
