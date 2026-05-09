@@ -38,8 +38,7 @@ from src.simulation.simulation_engine import (
     load_graph,
     load_node_positions,
     _load_or_compute_matrix,
-    SimulationState,
-    _tick,
+    SimulationEngine,
 )
 from src.simulation.ambulance import Ambulance
 from src.simulation.event_spawner import EventSpawner
@@ -85,9 +84,8 @@ def _build_engine(
     graph,
     node_positions: dict,
     distance_matrix,
-    node_index: dict,
-) -> tuple[list[Ambulance], EventSpawner, DispatcherBrain, TrafficModel | None, SimulationState]:
-    """Construct one simulation engine (ambulances, spawner, dispatcher)."""
+) -> SimulationEngine:
+    """Construct one simulation engine."""
     num_ambulances = int(cfg.get("NUM_AMBULANCES", 5))
     poisson_lambda = float(cfg.get("POISSON_LAMBDA", 0.05))
 
@@ -96,38 +94,17 @@ def _build_engine(
         fallback = list(node_positions.keys())
         start_nodes.append(int(fallback[len(start_nodes) % len(fallback)]))
 
-    ambulances = [
-        Ambulance(id=i, start_node=start_nodes[i], graph=graph)
-        for i in range(num_ambulances)
-    ]
-    for amb in ambulances:
-        amb.update_position(node_positions)
-
-    traffic: TrafficModel | None = None
-    if cfg.get("TRAFFIC_ENABLED", True):
-        traffic = TrafficModel(
-            graph=graph,
-            node_positions=node_positions,
-            max_multiplier=float(cfg.get("CONGESTION_MAX_MULTIPLIER", 2.5)),
-            decay_rate=float(cfg.get("CONGESTION_DECAY_RATE", 0.02)),
-        )
-
-    spawner = EventSpawner(
-        lambda_rate=poisson_lambda,
-        node_positions=node_positions,
-        rng_seed=event_seed,
-    )
-    dispatcher = DispatcherBrain(
-        ambulances=ambulances,
-        distance_matrix=distance_matrix,
-        node_index=node_index,
-        node_positions=node_positions,
+    return SimulationEngine(
         graph=graph,
-        traffic=traffic,
+        node_positions=node_positions,
+        distance_matrix=distance_matrix,
+        start_nodes=start_nodes,
+        ticks=int(cfg.get("SIMULATION_TICKS", 1000)),
+        lambda_rate=poisson_lambda,
+        event_seed=event_seed,
+        headless=True,  # We handle the rendering manually here
         cfg=cfg,
     )
-    state = SimulationState()
-    return ambulances, spawner, dispatcher, traffic, state
 
 
 def _draw_header(
@@ -202,13 +179,13 @@ def main() -> None:
     ai_nodes      = load_optimal_fleet(optimal_path)
 
     # ── Build two independent engines ──────────────────────────────────────
-    b_ambs, b_spawner, b_disp, b_traffic, b_state = _build_engine(
+    b_engine = _build_engine(
         cfg, baseline_nodes, event_seed,
-        graph, node_positions, distance_matrix, node_index,
+        graph, node_positions, distance_matrix,
     )
-    a_ambs, a_spawner, a_disp, a_traffic, a_state = _build_engine(
+    a_engine = _build_engine(
         cfg, ai_nodes, event_seed,
-        graph, node_positions, distance_matrix, node_index,
+        graph, node_positions, distance_matrix,
     )
 
     # ── Two surfaces for split-screen rendering ────────────────────────────
@@ -246,33 +223,33 @@ def main() -> None:
                     running = False
 
         if started and not paused:
-            if b_state.current_tick < max_ticks:
-                _tick(b_state, b_ambs, b_spawner, b_disp, node_positions, b_traffic, None)
-            if a_state.current_tick < max_ticks:
-                _tick(a_state, a_ambs, a_spawner, a_disp, node_positions, a_traffic, None)
+            if b_engine.state.current_tick < max_ticks:
+                b_engine._tick()
+            if a_engine.state.current_tick < max_ticks:
+                a_engine._tick()
 
-            if b_state.current_tick >= max_ticks and a_state.current_tick >= max_ticks:
+            if b_engine.state.current_tick >= max_ticks and a_engine.state.current_tick >= max_ticks:
                 running = False
 
         if not headless:
             screen.fill(COLOUR_BG)
 
             # Draw each panel
-            for renderer, state, ambs, disp, surf in [
-                (b_renderer,  b_state, b_ambs, b_disp,  b_surf),
-                (ai_renderer, a_state, a_ambs, a_disp, ai_surf),
+            for renderer, engine, surf in [
+                (b_renderer,  b_engine, b_surf),
+                (ai_renderer, a_engine, ai_surf),
             ]:
                 surf.fill(COLOUR_BG)
                 renderer.draw(
-                    state=state,
-                    ambulances=ambs,
-                    dispatcher=disp,
+                    state=engine.state,
+                    ambulances=engine.ambulances,
+                    dispatcher=engine.dispatcher,
                     show_metrics_panel=False,
                     show_hotspots=False,
                     show_traffic=False,
                     show_log=False,
                     log_buffer=log_buf,
-                    current_tick=state.current_tick,
+                    current_tick=engine.state.current_tick,
                 )
 
             screen.blit(b_surf,  (0,            HEADER_H))
@@ -282,8 +259,8 @@ def main() -> None:
 
             _draw_header(
                 screen, font_large, font_small,
-                b_state.current_tick, max_ticks, paused,
-                _running_art(b_disp), _running_art(a_disp),
+                b_engine.state.current_tick, max_ticks, paused,
+                _running_art(b_engine.dispatcher), _running_art(a_engine.dispatcher),
             )
 
             if not started:
@@ -300,8 +277,8 @@ def main() -> None:
                 break
 
     # ── Final stats ────────────────────────────────────────────────────────
-    b_final  = _running_art(b_disp)
-    ai_final = _running_art(a_disp)
+    b_final  = _running_art(b_engine.dispatcher)
+    ai_final = _running_art(a_engine.dispatcher)
     print(f"\n[Demo] Baseline ART  = {b_final:.2f} ticks")
     print(f"[Demo] AI fleet ART  = {ai_final:.2f} ticks")
     if b_final > 0:

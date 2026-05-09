@@ -587,3 +587,7 @@
 12:47:38 [[32mINFO[0m] src.simulation.simulation_engine: Simulation ended at tick 77.
 12:47:38 [[32mINFO[0m] src.simulation.metrics_tracker: Summary CSV written to outputs/metrics_summary.csv
 12:47:39 [[32mINFO[0m] src.sim_config_loader: Loaded base config from headless_ai.yaml
+15:55:26 [[32mINFO[0m] src.simulation.sim_logger: Logging configured: level=INFO, file=outputs/sim.log
+15:55:26 [[32mINFO[0m] src.simulation.simulation_engine: Loading distance matrix from data/distance_matrix.npy ...
+15:55:30 [[32mINFO[0m] src.simulation.metrics_tracker: Summary CSV written to outputs/metrics_summary.csv
+15:55:30 [[32mINFO[0m] src.sim_config_loader: Loaded base config from headless_ai.yaml
