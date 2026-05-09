@@ -197,8 +197,7 @@ class SimulationEngine:
                         new_node = int(list(self.node_positions.keys())[0]) # Placeholder
                         self.add_ambulance(new_node)
                     elif pg_event.key == pygame.K_k:
-                        clusters = self.dispatcher.demand_clusterer.run(self.dispatcher.active_events)
-                        self.dispatcher._rebalance_to_clusters(clusters, self.state.current_tick)
+                        self.dispatcher.rebalance_fleet(self.state.current_tick)
                         self.state.last_hdbscan_tick = self.state.current_tick
 
             # Tick

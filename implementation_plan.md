@@ -1,944 +1,947 @@
-# Sprint 10 Implementation Plan: Sensitivity Analysis & Parameter Tuning
+# Sprint 11 Implementation Plan: Integration Testing & Edge Cases
 
-**Sprint Goal:** Characterize system performance across key parameter dimensions — event arrival rate, fleet size, and HDBSCAN clustering configuration — using headless batch sweeps, offline Matplotlib analysis, and live Pygame interactive controls.  
-**Duration:** Week 10  
-**Total Story Points:** 15  
-**Visualization Stack:** Pygame (live parameter controls) + Matplotlib (offline sweep plots, saved as PNG)
+**Sprint Goal:** Harden the ResQ-Graph system against edge cases and verify end-to-end robustness through a comprehensive test suite.
+
+**Total Story Points:** 18  
+**Duration:** Week 11  
+**Codebase baseline:** Sprint 10 (ResQ-Graph)
 
 ---
 
 ## Table of Contents
 
 1. [Sprint Overview](#sprint-overview)
-2. [Architecture Overview](#architecture-overview)
-3. [Prerequisites & Dependencies](#prerequisites--dependencies)
-4. [US-037 – Sensitivity Analysis on Event Rate (Lambda)](#us-037--sensitivity-analysis-on-event-rate-lambda)
-5. [US-038 – Sensitivity Analysis on Number of Ambulances](#us-038--sensitivity-analysis-on-number-of-ambulances)
-6. [US-039 – HDBSCAN Sensitivity Analysis](#us-039--hdbscan-sensitivity-analysis)
-7. [US-040 – Sensitivity Analysis Report](#us-040--sensitivity-analysis-report)
-8. [Live Pygame Controls](#live-pygame-controls)
-9. [Integration & Cross-Cutting Concerns](#integration--cross-cutting-concerns)
-10. [Testing Strategy](#testing-strategy)
-11. [Definition of Done](#definition-of-done)
-12. [Risk Register](#risk-register)
-13. [Suggested File Structure](#suggested-file-structure)
+2. [Testing Architecture & Conventions](#testing-architecture--conventions)
+3. [US-041: Comprehensive Unit Tests](#us-041-comprehensive-unit-tests)
+4. [US-042: Integration Tests](#us-042-integration-tests)
+5. [US-043: Edge Cases & Failure Modes](#us-043-edge-cases--failure-modes)
+6. [US-044: Regression Test Suite & CI](#us-044-regression-test-suite--ci)
+7. [Coverage Analysis](#coverage-analysis)
+8. [Deliverables Checklist](#deliverables-checklist)
+9. [Risk Register](#risk-register)
 
 ---
 
 ## Sprint Overview
 
-| User Story | Title | Points | Priority |
-|---|---|---|---|
-| US-037 | Sensitivity Analysis on Event Rate (Lambda) | 4 | High |
-| US-038 | Sensitivity Analysis on Number of Ambulances | 4 | High |
-| US-039 | HDBSCAN Sensitivity Analysis | 4 | High |
-| US-040 | Generate Sensitivity Analysis Report | 3 | Medium |
-| **Total** | | **15** | |
+Sprint 11 is a pure quality sprint — no new simulation features. All work produces test files, coverage reports, CI configuration, and hardened error-handling code in existing source modules.
 
-> **Algorithm Note:** US-039 tests HDBSCAN parameters (`min_cluster_size`, `min_samples`), not K-Means (`k`). This is a direct consequence of the algorithm decision recorded in the Sprints 6–7 plan. The original PDF's `k=2,3,4` sensitivity analysis is replaced entirely.
+### What the Codebase Contains at Sprint 10
 
----
+Understanding the full component inventory is necessary before writing tests. The README confirms these components exist and must be covered:
 
-## Architecture Overview
-
-Each user story follows the same three-layer pattern established in Sprints 8–9:
-
-```
-headless_sensitivity.yaml
-        │
-        ▼
-ParameterSweepRunner          (src/run_sensitivity.py)
-        │
-        ├── SweepConfig  ─────►  SimulationEngine × N runs (headless)
-        │                              │
-        │                        MetricsTracker
-        │                              │
-        ▼                              ▼
-outputs/sensitivity/           sweep result dicts
-  lambda_sweep.csv
-  fleet_sweep.csv
-  hdbscan_sweep.csv
-        │
-        ▼
-SensitivityAnalyser            (src/analyze_sensitivity.py)
-        │
-        ├── outputs/figures/   ─── 3 sweep plots (PNG)
-        └── outputs/sensitivity_report.md
-```
-
-Live Pygame controls are wired into `src/main.py`'s event loop — they are interactive observation tools, not part of the batch sweep pipeline.
-
----
-
-## Prerequisites & Dependencies
-
-### From Sprints 1–9 (must be complete)
-
-| Dependency | Required For |
-|---|---|
-| `src/simulation/simulation_engine.py` — headless, seeded | All sweeps |
-| `src/simulation/random_fleet.py` — `generate_random_fleet()` | US-037, US-038 baseline runs |
-| `outputs/optimal_stations.json` — fixed AI fleet | US-037, US-038 AI runs |
-| `src/intelligence/hdbscan.py` — custom HDBSCAN | US-039 |
-| `src/intelligence/demand_clustering.py` — `DemandClusterer` | US-039 |
-| `src/sim_config_loader.py` — seed management, headless flag | All sweeps |
-| `src/rendering/visualizer.py` — matplotlib plotting functions | US-040 |
-| `outputs/baseline_results.csv` — Sprint 8 reference ART | US-037, US-038 context |
-| `outputs/ai_results.csv` — Sprint 9 reference ART (confirm exists before running) | US-037, US-038 context |
-
-### New Dependencies
-
-No new packages required. `scipy`, `pandas`, `numpy`, `matplotlib` all present from prior sprints.
-
-### New Configuration File (`headless_sensitivity.yaml`)
-
-```yaml
-# headless_sensitivity.yaml
-# Runs all three parameter sweeps in sequence.
-# Run with: python src/run_sensitivity.py --headless --config headless_sensitivity.yaml
-
-meta:
-  config_version: "1.0"
-  sprint: 10
-  description: "Sensitivity analysis sweeps — lambda, fleet size, HDBSCAN"
-
-simulation:
-  ticks: 1000
-  service_ticks: 10
-  num_runs_per_config: 5    # runs averaged per parameter value (speed vs precision tradeoff)
-
-seeds:
-  event_seed: 42            # base; offset by run_id per run
-  ambulance_seed: 0
-  random_seed: 99           # for baseline random fleet generation in sweeps
-
-sweeps:
-  lambda:
-    values: [0.01, 0.05, 0.1, 0.15]
-    fixed_num_ambulances: 5
-
-  fleet_size:
-    values: [3, 5, 7, 10]
-    fixed_lambda: 0.05
-
-  hdbscan:
-    min_cluster_size_values: [3, 5, 8]
-    min_samples_values: [2, 3, 5]
-    update_interval_values: [25, 50, 100]
-    fixed_lambda: 0.05
-    fixed_num_ambulances: 5
-
-rendering:
-  headless: true
-  target_fps: 0
-  screen_w: 1200
-  screen_h: 900
-
-output:
-  figures_dir:        "outputs/figures/"
-  sensitivity_dir:    "outputs/sensitivity/"
-  report_md:          "outputs/sensitivity_report.md"
-```
-
----
-
-## US-037 – Sensitivity Analysis on Event Rate (Lambda)
-
-**Story Points:** 4  
-**Goal:** Characterize how increasing accident arrival rate affects ART for both the random baseline and AI-optimized fleet.
-
-### Sweep Design
-
-```
-Lambda values: [0.01, 0.05, 0.1, 0.15]
-Fleet types:   [baseline (random), AI (optimal)]
-Runs per cell: 5 (averaged)
-Total runs:    4 × 2 × 5 = 40 headless simulations
-Fixed params:  num_ambulances=5, ticks=1000
-```
-
-Each of the 40 runs uses a distinct event seed derived as:
-```
-event_seed = base_event_seed + (lambda_idx * 100) + run_id
-```
-This ensures no seed collision between lambda cells while remaining deterministic.
-
-### LambdaSweepRunner
-
-```python
-# src/run_sensitivity.py  (LambdaSweepRunner section)
-
-class LambdaSweepRunner:
-    def __init__(self, config: dict, graph, node_positions: dict,
-                 distance_matrix, optimal_fleet: list[int]):
-        self.config          = config
-        self.graph           = graph
-        self.node_positions  = node_positions
-        self.distance_matrix = distance_matrix
-        self.optimal_fleet   = optimal_fleet
-        self.results: list[dict] = []
-
-    def run(self) -> None:
-        lambda_values = self.config["sweeps"]["lambda"]["values"]
-        num_ambulances = self.config["sweeps"]["lambda"]["fixed_num_ambulances"]
-        num_runs = self.config["simulation"]["num_runs_per_config"]
-
-        for lam_idx, lam in enumerate(lambda_values):
-            for fleet_type in ["baseline", "ai"]:
-                run_arts = []
-                run_events = []
-                for run_id in range(num_runs):
-                    fleet = self._get_fleet(fleet_type, num_ambulances, run_id)
-                    seed  = self.config["seeds"]["event_seed"] + (lam_idx * 100) + run_id
-                    art, total_events = self._single_run(fleet, lam, num_ambulances, seed)
-                    run_arts.append(art)
-                    run_events.append(total_events)
-
-                self.results.append({
-                    "lambda":       lam,
-                    "fleet_type":   fleet_type,
-                    "mean_art":     float(np.mean(run_arts)),
-                    "std_art":      float(np.std(run_arts, ddof=1)),
-                    "mean_events":  float(np.mean(run_events)),
-                    "num_runs":     num_runs
-                })
-                print(f"  λ={lam} | {fleet_type:8s} | ART={np.mean(run_arts):.2f} ± "
-                      f"{np.std(run_arts, ddof=1):.2f}")
-
-    def _get_fleet(self, fleet_type: str, num_ambulances: int,
-                   run_id: int) -> list[int]:
-        """Return fixed AI fleet or a freshly seeded random fleet."""
-        if fleet_type == "ai":
-            return self.optimal_fleet
-        seed = self.config["seeds"]["random_seed"] + run_id
-        return generate_random_fleet(self.graph, num_ambulances, seed=seed)
-
-    def _single_run(self, fleet, lambda_rate, num_ambulances, event_seed) -> tuple:
-        engine = SimulationEngine(
-            graph=self.graph, node_positions=self.node_positions,
-            distance_matrix=self.distance_matrix,
-            start_nodes=fleet, ticks=self.config["simulation"]["ticks"],
-            lambda_rate=lambda_rate, event_seed=event_seed,
-            ambulance_seed=self.config["seeds"]["ambulance_seed"],
-            headless=True
-        )
-        engine.run()
-        t = engine.metrics_tracker
-        return t.art, len(t.response_times)
-
-    def export_csv(self, path: str = "outputs/sensitivity/lambda_sweep.csv") -> None:
-        """Write results to CSV."""
-```
-
-### Output: `lambda_sweep.csv`
-
-```
-lambda, fleet_type, mean_art, std_art, mean_events, num_runs
-0.01, baseline, 4.21, 0.88, 9.8, 5
-0.01, ai, 3.05, 0.62, 9.8, 5
-0.05, baseline, 8.34, 1.42, 47.3, 5
-...
-```
-
-### Plot: ART vs Lambda
-
-```
-Type:   Dual line plot with error bands
-X axis: Lambda (0.01 → 0.15)
-Y axis: Mean ART (ticks)
-Series: Baseline (red) vs AI (blue)
-Extras: ±1 std dev shaded band per series
-        Reference points at λ=0.05: Baseline ~25.7 ticks, AI ~23.1 ticks
-        (actual Sprint 9 results — annotated as dotted horizontal markers)
-        Annotations: "System saturation zone" when ART inflects steeply
-Output: outputs/figures/sensitivity_lambda.png
-```
-
-### Live Pygame Control: `+` / `-` Keys
-
-Wired into `src/main.py`'s event loop (windowed mode only — not active during headless sweeps):
-
-```python
-# src/main.py event loop addition
-elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
-    config["lambda"] = min(config["lambda"] + 0.01, 0.30)
-    engine.event_spawner.set_lambda(config["lambda"])
-    logger.info(f"Lambda adjusted to {config['lambda']:.2f}")
-
-elif event.key == pygame.K_MINUS:
-    config["lambda"] = max(config["lambda"] - 0.01, 0.001)
-    engine.event_spawner.set_lambda(config["lambda"])
-    logger.info(f"Lambda adjusted to {config['lambda']:.2f}")
-```
-
-The HUD displays the current lambda value so changes are immediately visible. `set_lambda()` is the existing method on `EventSpawner` from Sprint 7.
-
-### Tasks Breakdown
-
-1. Implement `LambdaSweepRunner` in `src/run_sensitivity.py`.
-2. Implement `export_csv()` for lambda sweep results.
-3. Add `+`/`-` key handlers to `src/main.py` event loop.
-4. Update HUD in `src/rendering/pygame_renderer.py` to display current lambda.
-5. Implement lambda sweep plot in `src/rendering/visualizer.py`.
-6. Verify 40 headless runs complete without error.
-
----
-
-## US-038 – Sensitivity Analysis on Number of Ambulances
-
-**Story Points:** 4  
-**Goal:** Characterize how fleet size affects ART and coverage, and identify diminishing returns.
-
-### Sweep Design
-
-```
-Fleet sizes:   [3, 5, 7, 10]
-Fleet types:   [baseline (random), AI (optimal)]
-Runs per cell: 5 (averaged)
-Total runs:    4 × 2 × 5 = 40 headless simulations
-Fixed params:  lambda=0.05, ticks=1000
-```
-
-Seed derivation:
-```
-event_seed = base_event_seed + (fleet_size_idx * 100) + run_id
-```
-
-**Important note for AI fleet:** The GA was optimized for 5 ambulances. For fleet sizes other than 5, the AI fleet is handled as follows:
-- **Fewer than 5 (e.g., 3):** Use the top-3 stations by coverage from `outputs/optimal_stations.json` (ranked by their individual coverage contribution to the fitness function).
-- **More than 5 (e.g., 7, 10):** Use all 5 optimal stations plus randomly sampled additional nodes (seeded). Document this as a limitation — the GA was not re-run for these sizes.
-
-### FleetSizeSweepRunner
-
-```python
-class FleetSizeSweepRunner:
-    def __init__(self, config: dict, graph, node_positions: dict,
-                 distance_matrix, optimal_fleet: list[int]):
-        self.config          = config
-        self.graph           = graph
-        self.node_positions  = node_positions
-        self.distance_matrix = distance_matrix
-        self.optimal_fleet   = optimal_fleet
-        self.results: list[dict] = []
-
-    def run(self) -> None:
-        fleet_sizes = self.config["sweeps"]["fleet_size"]["values"]
-        lambda_rate = self.config["sweeps"]["fleet_size"]["fixed_lambda"]
-        num_runs    = self.config["simulation"]["num_runs_per_config"]
-
-        for size_idx, num_amb in enumerate(fleet_sizes):
-            for fleet_type in ["baseline", "ai"]:
-                run_arts = []
-                for run_id in range(num_runs):
-                    fleet = self._get_fleet(fleet_type, num_amb, run_id)
-                    seed  = (self.config["seeds"]["event_seed"]
-                             + (size_idx * 100) + run_id)
-                    art, _ = self._single_run(fleet, lambda_rate, num_amb, seed)
-                    run_arts.append(art)
-
-                self.results.append({
-                    "num_ambulances": num_amb,
-                    "fleet_type":     fleet_type,
-                    "mean_art":       float(np.mean(run_arts)),
-                    "std_art":        float(np.std(run_arts, ddof=1)),
-                    "num_runs":       num_runs
-                })
-
-    def _get_fleet(self, fleet_type: str, num_ambulances: int,
-                   run_id: int) -> list[int]:
-        if fleet_type == "baseline":
-            seed = self.config["seeds"]["random_seed"] + run_id
-            return generate_random_fleet(self.graph, num_ambulances, seed=seed)
-        # AI fleet: scale optimal fleet to requested size
-        if num_ambulances <= len(self.optimal_fleet):
-            return self.optimal_fleet[:num_ambulances]  # top-N stations
-        else:
-            extra_seed = self.config["seeds"]["random_seed"] + 1000 + run_id
-            extra = generate_random_fleet(
-                self.graph,
-                num_ambulances - len(self.optimal_fleet),
-                seed=extra_seed
-            )
-            return self.optimal_fleet + extra
-
-    def export_csv(self, path: str = "outputs/sensitivity/fleet_sweep.csv") -> None:
-        """Write results to CSV."""
-```
-
-### Output: `fleet_sweep.csv`
-
-```
-num_ambulances, fleet_type, mean_art, std_art, num_runs
-3, baseline, 14.22, 2.31, 5
-3, ai, 10.87, 1.95, 5
-5, baseline, 8.34, 1.42, 5
-5, ai, 5.21, 1.10, 5
-...
-```
-
-### Plot: ART vs Fleet Size
-
-```
-Type:   Dual line plot
-X axis: Number of ambulances (3, 5, 7, 10)
-Y axis: Mean ART (ticks)
-Series: Baseline (red circles) vs AI (blue squares)
-Extras: Error bars ±1 std dev
-        Annotation: "Diminishing returns" zone where slope flattens
-        Reference point at N=5: Baseline ~25.7, AI ~23.1 ticks
-        (actual Sprint 9 results — highlighted with a distinct marker)
-Output: outputs/figures/sensitivity_fleet_size.png
-```
-
-### Live Pygame Control: `A` Key
-
-```python
-# src/main.py event loop addition
-elif event.key == pygame.K_a:
-    new_node = _spawn_new_ambulance(graph, node_positions, distance_matrix, config)
-    if new_node is not None:
-        engine.add_ambulance(new_node)
-        logger.info(f"Ambulance added at node {new_node}. "
-                    f"Total: {len(engine.ambulances)}")
-```
-
-`engine.add_ambulance(node)` is a new method on `SimulationEngine`:
-
-```python
-def add_ambulance(self, start_node: int) -> None:
-    """Dynamically add one IDLE ambulance at runtime."""
-    new_id = max(a.id for a in self.ambulances) + 1
-    amb = Ambulance(id=new_id, start_node=start_node, graph=self.graph)
-    self.ambulances.append(amb)
-    self.dispatcher.ambulances.append(amb)
-```
-
-The HUD updates ambulance count live. This method is the only modification to `SimulationEngine` in this sprint.
-
-### Tasks Breakdown
-
-1. Implement `FleetSizeSweepRunner` in `src/run_sensitivity.py`.
-2. Implement AI fleet scaling logic (`_get_fleet()`) with documented limitation.
-3. Implement `export_csv()` for fleet sweep results.
-4. Implement `engine.add_ambulance()` method on `SimulationEngine`.
-5. Add `A` key handler to `src/main.py` event loop.
-6. Implement fleet size sweep plot in `src/rendering/visualizer.py`.
-7. Verify 40 headless runs complete without error.
-
----
-
-## US-039 – HDBSCAN Sensitivity Analysis
-
-**Story Points:** 4  
-**Goal:** Identify optimal HDBSCAN `min_cluster_size`, `min_samples`, and `rebalance_interval` settings that minimize ART without causing excessive ambulance churn.
-
-> **Replaces:** The original PDF's K-Means `k` sensitivity analysis. Per the algorithm decision documented in the Sprints 6–7 plan, HDBSCAN replaced K-Means and has no `k` parameter. This story tests `min_cluster_size` and `min_samples` instead.
-
-### Parameters Under Test
-
-| Parameter | Values Tested | What It Controls |
+| Component | Source File(s) | Introduced |
 |---|---|---|
-| `min_cluster_size` | 3, 5, 8 | Minimum accidents to form a hotspot; higher = fewer, more stable clusters |
-| `min_samples` | 2, 3, 5 | Core point density threshold; higher = more conservative clustering |
-| `rebalance_interval` | 25, 50, 100 | Ticks between HDBSCAN runs; lower = more reactive, higher churn |
+| A* Pathfinding | `src/astar.py` | Sprint 1 |
+| Traffic Model | `src/simulation/traffic.py` | Sprint 7 |
+| HDBSCAN Clustering | `src/intelligence/hdbscan.py`, `src/intelligence/demand_clustering.py` | Sprint 7–8 |
+| Dispatcher & Assignment | `src/simulation/dispatcher.py`, `src/simulation/assignment.py` | Sprint 1–7 |
+| **Traffic-Aware GA** | `src/run_ai_fleet.py` (config: `headless_ai.yaml`) | **Sprint 9** |
+| MetricsTracker | `src/simulation/metrics_tracker.py` | Sprint 3 |
+| Pygame Renderer | `src/rendering/pygame_renderer.py` | Sprint 5 |
+| Sensitivity Runner | `src/run_sensitivity.py` (outputs: `outputs/sensitivity/`) | Sprint 10 |
 
-### Sweep Design
+> **GA note:** Sprint 9 introduced a **Traffic-Aware Genetic Algorithm** for optimising fleet station placement (`src/run_ai_fleet.py`, `headless_ai.yaml`). This is the GA referenced in the sprint spec for US-041 fitness/mutation/convergence tests. It is a real component and must be covered.
 
-Full factorial over all three parameters:
+> **K-Means note:** The sprint spec references "K-Means" tests. ResQ-Graph uses **HDBSCAN** (`src/intelligence/hdbscan.py`), not K-Means. The K-Means test slot is fulfilled by HDBSCAN unit tests, which cover equivalent properties (convergence, single-cluster, divergent data).
 
-```
-min_cluster_size:   [3, 5, 8]      → 3 values
-min_samples:        [2, 3, 5]      → 3 values
-rebalance_interval: [25, 50, 100]  → 3 values
-Runs per cell:      3 (averaged — reduced from 5 due to 27-cell grid)
-Total runs:         3 × 3 × 3 × 3 = 81 headless simulations
-Fixed params:       AI fleet, lambda=0.05, num_ambulances=5, ticks=1000
-```
+### Test Modes
 
-Only the AI fleet is tested — HDBSCAN rebalancing is only meaningful when dispatch quality is controlled.
+| Mode | Command | When Run |
+|---|---|---|
+| Unit tests | `pytest tests/unit/ -v` | On every commit |
+| Integration tests | `pytest tests/integration/ -v` | On every commit |
+| Edge case tests | `pytest tests/edge_cases/ -v` | On every commit |
+| Regression suite | `pytest tests/regression/ -v --timeout=120` | On every commit; must finish < 2 min |
+| Full coverage check | `pytest --cov=src --cov-fail-under=80` | On every PR |
 
-### Metrics Collected Per Cell
+### Pygame / SDL in Tests
 
-| Metric | Description |
-|---|---|
-| `mean_art` | Primary performance metric |
-| `std_art` | Variance across runs |
-| `mean_rebalance_count` | Average times rebalancing fired per run |
-| `mean_clusters_detected` | Average hotspots found per HDBSCAN call |
-| `mean_noise_fraction` | Fraction of accidents classified as noise |
+`SDL_VIDEODRIVER=dummy` is already enforced in `src/main.py` and `src/run_baseline.py` for headless mode. Sprint 11 extends this to the test suite. The env var is set **once** in `conftest.py` at session scope — no individual test file sets it.
 
-### HDBSCANSweepRunner
-
-```python
-class HDBSCANSweepRunner:
-    def __init__(self, config: dict, graph, node_positions: dict,
-                 distance_matrix, optimal_fleet: list[int]):
-        self.config          = config
-        self.graph           = graph
-        self.node_positions  = node_positions
-        self.distance_matrix = distance_matrix
-        self.optimal_fleet   = optimal_fleet
-        self.results: list[dict] = []
-
-    def run(self) -> None:
-        sweep_cfg = self.config["sweeps"]["hdbscan"]
-        num_runs  = self.config["simulation"]["num_runs_per_config"]
-        cell_idx  = 0
-
-        for mcs in sweep_cfg["min_cluster_size_values"]:
-            for ms in sweep_cfg["min_samples_values"]:
-                for interval in sweep_cfg["update_interval_values"]:
-                    run_arts, run_rebalances, run_clusters, run_noise = [], [], [], []
-
-                    for run_id in range(num_runs):
-                        seed = (self.config["seeds"]["event_seed"]
-                                + (cell_idx * 100) + run_id)
-                        metrics = self._single_run(mcs, ms, interval, seed)
-                        run_arts.append(metrics["art"])
-                        run_rebalances.append(metrics["rebalance_count"])
-                        run_clusters.append(metrics["mean_clusters"])
-                        run_noise.append(metrics["noise_fraction"])
-
-                    self.results.append({
-                        "min_cluster_size":       mcs,
-                        "min_samples":            ms,
-                        "rebalance_interval":     interval,
-                        "mean_art":               float(np.mean(run_arts)),
-                        "std_art":                float(np.std(run_arts, ddof=1)),
-                        "mean_rebalance_count":   float(np.mean(run_rebalances)),
-                        "mean_clusters_detected": float(np.mean(run_clusters)),
-                        "mean_noise_fraction":    float(np.mean(run_noise))
-                    })
-                    print(f"  mcs={mcs} ms={ms} interval={interval} | "
-                          f"ART={np.mean(run_arts):.2f} | "
-                          f"rebalances={np.mean(run_rebalances):.1f}")
-                    cell_idx += 1
-
-    def _single_run(self, min_cluster_size: int, min_samples: int,
-                    rebalance_interval: int, event_seed: int) -> dict:
-        """
-        Runs the engine with patched HDBSCAN params.
-        DemandClusterer and DispatcherBrain receive updated params at init.
-        """
-        engine = SimulationEngine(
-            graph=self.graph, node_positions=self.node_positions,
-            distance_matrix=self.distance_matrix,
-            start_nodes=self.optimal_fleet,
-            ticks=self.config["simulation"]["ticks"],
-            lambda_rate=self.config["sweeps"]["hdbscan"]["fixed_lambda"],
-            event_seed=event_seed,
-            ambulance_seed=self.config["seeds"]["ambulance_seed"],
-            hdbscan_min_cluster_size=min_cluster_size,
-            hdbscan_min_samples=min_samples,
-            rebalance_interval=rebalance_interval,
-            headless=True
-        )
-        engine.run()
-        t = engine.metrics_tracker
-        d = engine.dispatcher
-        return {
-            "art":              t.art,
-            "rebalance_count":  d.rebalance_count,
-            "mean_clusters":    d.mean_clusters_per_rebalance,
-            "noise_fraction":   d.mean_noise_fraction
-        }
-
-    def export_csv(self, path: str = "outputs/sensitivity/hdbscan_sweep.csv") -> None:
-        """Write full factorial results to CSV."""
-```
-
-### Required Engine Interface Additions
-
-`SimulationEngine` must accept `hdbscan_min_cluster_size`, `hdbscan_min_samples`, and `rebalance_interval` as constructor parameters and pass them through to `DemandClusterer` and `DispatcherBrain`. These are the only additions to the engine for this sprint.
-
-`DispatcherBrain` must expose:
-- `rebalance_count: int` — incremented each time `rebalance_fleet()` is called
-- `mean_clusters_per_rebalance: float` — rolling mean of clusters found
-- `mean_noise_fraction: float` — rolling mean of noise fraction
-
-These counters are already consistent with the logging system from Sprint 7; they just need to be surfaced as public attributes.
-
-### Output: `hdbscan_sweep.csv`
-
-```
-min_cluster_size, min_samples, rebalance_interval, mean_art, std_art, mean_rebalance_count, mean_clusters_detected, mean_noise_fraction
-3, 2, 25, 5.44, 1.21, 38.2, 2.1, 0.18
-3, 2, 50, 5.61, 1.18, 19.4, 2.0, 0.19
-...
-```
-
-### Plots: HDBSCAN Sensitivity
-
-Two plots are generated:
-
-**Plot A — ART Heatmap (min_cluster_size × min_samples, one panel per interval):**
-```
-Type:   3-panel heatmap grid (one per rebalance_interval)
-X axis: min_samples (2, 3, 5)
-Y axis: min_cluster_size (3, 5, 8)
-Colour: mean_art (green=low, red=high)
-Output: outputs/figures/sensitivity_hdbscan_art.png
-```
-
-**Plot B — Rebalance Churn vs ART (scatter):**
-```
-Type:   Scatter plot
-X axis: mean_rebalance_count (proxy for churn)
-Y axis: mean_art
-Colour: rebalance_interval (3 distinct colours)
-Marker: shape = min_cluster_size group
-Extras: Pareto frontier line (lowest ART for given churn level)
-        Annotation: recommended operating point
-Output: outputs/figures/sensitivity_hdbscan_churn.png
-```
-
-### Recommendation Logic
-
-After the sweep, the analyser selects the recommended configuration:
-
-```python
-def recommend_hdbscan_config(df: pd.DataFrame) -> dict:
-    """
-    Select configuration minimizing ART subject to:
-      - mean_rebalance_count <= median rebalance_count
-        (avoid excessive churn)
-      - mean_noise_fraction <= 0.3
-        (clustering must be meaningful, not all noise)
-    """
-    filtered = df[
-        (df["mean_rebalance_count"] <= df["mean_rebalance_count"].median()) &
-        (df["mean_noise_fraction"] <= 0.30)
-    ]
-    if filtered.empty:
-        # Fallback: pure ART minimizer
-        return df.loc[df["mean_art"].idxmin()].to_dict()
-    return filtered.loc[filtered["mean_art"].idxmin()].to_dict()
-```
-
-### Live Pygame Control: `K` Key
-
-```python
-# src/main.py event loop addition
-elif event.key == pygame.K_k:
-    clusters = engine.dispatcher.demand_clusterer.run(
-        engine.dispatcher.active_events
-    )
-    engine.dispatcher._rebalance_to_clusters(clusters, engine.current_tick)
-    logger.info(f"Manual HDBSCAN triggered: {len(clusters)} clusters found")
-```
-
-The HUD briefly flashes "HDBSCAN triggered" for 60 ticks after the key press to confirm activation.
-
-### Tasks Breakdown
-
-1. Implement `HDBSCANSweepRunner` in `src/run_sensitivity.py`.
-2. Add `hdbscan_min_cluster_size`, `hdbscan_min_samples`, `rebalance_interval` params to `SimulationEngine.__init__()`.
-3. Surface `rebalance_count`, `mean_clusters_per_rebalance`, `mean_noise_fraction` on `DispatcherBrain`.
-4. Implement `export_csv()` for HDBSCAN sweep.
-5. Implement `recommend_hdbscan_config()` in `src/analyze_sensitivity.py`.
-6. Implement both heatmap and scatter plots in `src/rendering/visualizer.py`.
-7. Add `K` key handler to `src/main.py` event loop.
-8. Verify 81 headless runs complete without error or HDBSCAN exception.
+The CI job also sets it at the environment level as a second layer of defence (see US-044).
 
 ---
 
-## US-040 – Sensitivity Analysis Report
+## Testing Architecture & Conventions
+
+### File Structure (Sprint 11 additions shown)
+
+```text
+resq-graph/
+├── data/
+│   ├── model_town.graphml
+│   ├── node_positions.json
+│   ├── map_bg.png
+│   └── distance_matrix.npy
+├── outputs/
+│   ├── figures/
+│   ├── baseline_results.csv
+│   ├── baseline_report.md
+│   ├── random_fleet_log.json
+│   └── sensitivity/                 # Sprint 10 sweep outputs (CSVs + plots)
+├── src/
+│   ├── main.py
+│   ├── config.py
+│   ├── sim_config_loader.py
+│   ├── run_baseline.py
+│   ├── analyze_baseline.py
+│   ├── run_ai_fleet.py              # Sprint 9: GA fleet runner
+│   ├── run_sensitivity.py           # Sprint 10: sensitivity sweep runner
+│   ├── analyze_sensitivity.py
+│   ├── astar.py
+│   ├── distance_matrix.py
+│   ├── intelligence/
+│   │   ├── hdbscan.py
+│   │   └── demand_clustering.py
+│   ├── rendering/
+│   │   ├── pygame_renderer.py
+│   │   └── visualizer.py
+│   └── simulation/
+│       ├── ambulance.py
+│       ├── assignment.py
+│       ├── dispatcher.py
+│       ├── event_spawner.py
+│       ├── metrics_tracker.py
+│       ├── random_fleet.py
+│       ├── sim_logger.py
+│       ├── simulation_engine.py
+│       └── traffic.py
+├── tests/                           # Already exists — Sprint 11 expands it
+│   ├── conftest.py                  # NEW: Shared fixtures + SDL dummy enforcement
+│   ├── unit/                        # NEW subdirectory
+│   │   ├── test_astar.py            # US-041: NEW
+│   │   ├── test_genetic_algorithm.py# US-041: NEW (GA fitness, mutation, convergence)
+│   │   ├── test_renderer.py         # US-041: NEW (SDL dummy Pygame renderer tests)
+│   │   ├── [existing unit tests]    # test_hdbscan, test_traffic, test_dispatcher, etc.
+│   ├── integration/                 # NEW subdirectory
+│   │   ├── test_full_simulation.py  # US-042: NEW
+│   │   ├── test_ga_pipeline.py      # US-042: NEW
+│   │   ├── test_pygame_headless.py  # US-042: NEW (100-tick headless Pygame run)
+│   │   ├── [existing integration]   # test_rebalancing, test_congestion_rerouting, etc.
+│   ├── edge_cases/                  # NEW subdirectory
+│   │   ├── test_empty_graph.py      # US-043: NEW
+│   │   ├── test_no_idle_ambulances.py # US-043: NEW
+│   │   ├── test_unreachable_node.py # US-043: NEW
+│   │   ├── test_full_congestion.py  # US-043: NEW
+│   │   └── test_sprite_fallback.py  # US-043: NEW
+│   └── regression/                  # NEW subdirectory
+│       ├── test_regression_suite.py # US-044: NEW
+│       └── regression_baselines.json # US-044: NEW Sprint 10 known results
+├── sim_config.yaml
+├── headless_baseline.yaml
+├── headless_ai.yaml                 # Sprint 9 AI fleet config (used in GA tests)
+├── headless_sensitivity.yaml        # Sprint 10 sensitivity config
+├── pytest.ini                       # NEW: markers, timeout, coverage config
+├── .coveragerc                      # NEW: omit list
+└── .github/
+    └── workflows/
+        └── ci.yml                   # NEW: CI pipeline with headless SDL
+```
+
+### `tests/conftest.py` — Shared Fixtures
+
+```python
+# tests/conftest.py
+import os
+import pytest
+import networkx as nx
+
+# Enforce SDL dummy before any pygame import in any test file.
+# Must be set at module level (not inside a fixture) to guarantee ordering.
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+
+
+@pytest.fixture(scope="session")
+def model_town_graph():
+    """
+    Real model_town.graphml loaded once per test session.
+    Use for integration and regression tests only — too large for unit tests.
+    """
+    G = nx.read_graphml("data/model_town.graphml")
+    return nx.MultiGraph(G)
+
+
+@pytest.fixture
+def minimal_graph():
+    """
+    Tiny 4-node graph for unit tests. Predictable edge weights enable
+    exact path assertions without loading the real map.
+    """
+    G = nx.MultiGraph()
+    G.add_nodes_from([0, 1, 2, 3])
+    G.add_edge(0, 1, weight=1)
+    G.add_edge(1, 2, weight=1)
+    G.add_edge(2, 3, weight=1)
+    G.add_edge(0, 3, weight=5)   # Longer direct edge — A* should prefer 0→1→2→3
+    return G
+
+
+@pytest.fixture
+def base_config():
+    """Minimal valid config dict for SimulationEngine construction."""
+    return {
+        "ticks": 100,
+        "strategy": "ai",
+        "num_ambulances": 3,
+        "lambda_rate": 0.05,
+        "min_cluster_size": 2,
+        "rebalance_interval": 25,
+        "coverage_radius_m": 500,
+        "random_seed": 0,
+        "event_seed": 0,
+        "ambulance_seed": 0,
+        "headless": True,
+    }
+```
+
+### `pytest.ini`
+
+```ini
+[pytest]
+testpaths = tests
+addopts = --tb=short --timeout=120
+markers =
+    unit: Fast unit tests — no file I/O, synthetic graphs only
+    integration: End-to-end tests using model_town.graphml
+    edge_case: Edge case and failure mode tests
+    regression: Regression suite; must complete in < 2 min total
+```
+
+---
+
+## US-041: Comprehensive Unit Tests
+
+**Story Points:** 6  
+**Acceptance Owner:** QA Engineer
+
+### Goal
+
+Achieve ≥ 80% line coverage across `src/` with focused unit tests for every core module. All unit tests use `minimal_graph` or simple synthetic data — never `model_town.graphml` — to stay fast and isolated.
+
+---
+
+### Task 1 — A* Pathfinding Tests
+
+**File:** `tests/unit/test_astar.py`  
+**Module under test:** `src/astar.py`
+
+| Test | What It Verifies |
+|---|---|
+| `test_shortest_path_known_graph` | On `minimal_graph`, A* returns path `[0,1,2,3]` (cost 3) not the direct edge `0→3` (cost 5) |
+| `test_single_node_start_equals_goal` | `start == goal` returns an empty path and zero cost — no exception raised |
+| `test_unreachable_node_returns_none` | Disconnected graph (no edge between nodes) returns `None` — never hangs |
+| `test_heuristic_never_overestimates` | Haversine heuristic ≤ true path cost for all node pairs in `minimal_graph` |
+| `test_returned_path_nodes_exist` | Every node in the returned path is a member of the graph |
+| `test_deterministic_same_inputs` | Two calls with identical arguments return identical paths |
+
+---
+
+### Task 2 — Genetic Algorithm Tests
+
+**File:** `tests/unit/test_genetic_algorithm.py`  
+**Module under test:** `src/genetic_algorithm.py`  
+
+> The Traffic-Aware GA was introduced in Sprint 9 to optimise fleet station placement. It achieved a **+10.3% ART improvement**. These tests validate the algorithmic correctness of its core operations.
+
+| Test | What It Verifies |
+|---|---|
+| `test_fitness_returns_finite_value` | Fitness function logic used in GA evaluates to a finite number |
+| `test_mutation_changes_at_least_one_gene` | After mutation, the resulting chromosome differs from the parent in at least one position (when probability hits) |
+| `test_mutation_respects_valid_nodes` | Every mutated station position is a valid node in the graph |
+| `test_crossover_produces_child_of_correct_length` | Child chromosome from two parents of length N has exactly length N and no duplicate stations |
+| `test_convergence_improves_over_generations` | Running GA generations on `minimal_graph` produces a final best fitness ≤ initial generation's best fitness |
+| `test_initial_population_all_valid` | All chromosomes in the initial population contain only valid graph nodes |
+
+```python
+def test_mutation_respects_valid_nodes(minimal_graph):
+    from src.genetic_algorithm import GeneticAlgorithm
+    ga = GeneticAlgorithm(nodes=list(minimal_graph.nodes()), num_stations=3, mutation_rate=1.0)
+    parent = [0, 1, 2]
+    child = ga.mutate(parent)
+    valid_nodes = set(minimal_graph.nodes)
+    assert all(node in valid_nodes for node in child)
+```
+
+---
+
+### Task 3 — Renderer Unit Tests (Headless)
+
+**File:** `tests/unit/test_renderer.py`  
+**Module under test:** `src/rendering/pygame_renderer.py`
+
+All tests run under `SDL_VIDEODRIVER=dummy` (set by `conftest.py`). No display window is opened.
+
+| Test | What It Verifies |
+|---|---|
+| `test_renderer_initialises_headless` | `PygameRenderer.__init__()` completes under dummy SDL without `pygame.error` |
+| `test_draw_does_not_mutate_sim_state` | `renderer.draw(sim_state)` leaves `sim_state` bit-identical to before the call |
+| `test_draw_path_no_error` | `draw_path()` with a valid node-list path does not raise |
+| `test_hud_renders_with_empty_metrics` | HUD draw completes without exception when `MetricsTracker` has no recorded events |
+| `test_sprite_loads_when_file_exists` | Sprite loads correctly when the asset PNG is present |
+| `test_sprite_fallback_when_file_missing` | Missing asset PNG falls back to a colored rectangle — `FileNotFoundError` is not raised |
+
+```python
+def test_renderer_initialises_headless(base_config, model_town_graph):
+    # SDL_VIDEODRIVER=dummy set by conftest.py before this module is imported
+    import pygame
+    pygame.init()
+    from src.rendering.pygame_renderer import PygameRenderer
+    renderer = PygameRenderer(graph=model_town_graph, config=base_config)
+    assert renderer is not None
+    pygame.quit()
+```
+
+---
+
+### Acceptance Criteria Mapping
+
+| Criterion | Implementation |
+|---|---|
+| Tests for A*: shortest paths, unreachable, single-node | `test_astar.py` — 6 tests |
+| Tests for GA: fitness, mutation, convergence | `test_ga.py` — 8 tests |
+| Tests for HDBSCAN (K-Means slot): convergence, single-cluster, divergent data | `test_hdbscan.py` — 9 tests |
+| Tests for Dispatcher: assignment logic, re-routing | `test_dispatcher.py` — 8 tests |
+| Tests for Renderer: draw_path, HUD, sprite loading (SDL dummy) | `test_renderer.py` — 6 tests |
+| Minimum 80% code coverage | `pytest --cov=src --cov-fail-under=80` enforced in CI |
+
+---
+
+## US-042: Integration Tests
+
+**Story Points:** 5  
+**Acceptance Owner:** Tester
+
+### Goal
+
+Verify that all subsystems work correctly together in full end-to-end scenarios, including the GA fleet pipeline and a complete Pygame headless run.
+
+---
+
+### Task 1 — Full Simulation Run
+
+**File:** `tests/integration/test_full_simulation.py`
+
+```python
+def test_full_100_tick_simulation(base_config, model_town_graph):
+    """
+    Boots SimulationEngine with the real model_town.graphml and runs 100 ticks headless.
+    Verifies no exceptions raised, MetricsTracker is populated, CSVs can be exported.
+    """
+    from src.simulation.simulation_engine import SimulationEngine
+    config = base_config.copy()
+    config["ticks"] = 100
+    engine = SimulationEngine(config)
+    engine.run()
+    tracker = engine.metrics_tracker
+    assert tracker.average_response_time() >= 0
+    assert tracker.total_events_resolved() >= 0
+
+def test_simulation_exports_csvs(base_config, tmp_path):
+    from src.simulation.simulation_engine import SimulationEngine
+    config = base_config.copy()
+    config["output_dir"] = str(tmp_path)
+    SimulationEngine(config).run()
+    # Both metric files must be created
+    assert (tmp_path / "metrics_events.csv").exists()
+    assert (tmp_path / "metrics_summary.csv").exists()
+
+def test_baseline_vs_ai_art_ordering(model_town_graph, base_config):
+    """
+    At λ=0.1 over 500 ticks, AI fleet ART should be ≤ baseline ART.
+    Validates the Sprint 9 finding (AI ~10% better) holds at integration level.
+    """
+    from src.simulation.simulation_engine import SimulationEngine
+    config = base_config.copy()
+    config.update({"ticks": 500, "lambda_rate": 0.1, "random_seed": 42,
+                   "event_seed": 7, "ambulance_seed": 99})
+    baseline = SimulationEngine({**config, "strategy": "baseline"})
+    ai_fleet = SimulationEngine({**config, "strategy": "ai"})
+    baseline.run()
+    ai_fleet.run()
+    assert ai_fleet.metrics_tracker.average_response_time() <= \
+           baseline.metrics_tracker.average_response_time()
+```
+
+---
+
+### Task 2 — GA → Dispatcher → Simulation Pipeline
+
+**File:** `tests/integration/test_ga_pipeline.py`
+
+This is the integration test for the full Sprint 9 intelligence pipeline: the GA optimises station placement, its output is handed to the Dispatcher, and the simulation runs with those placements.
+
+| Test | What It Verifies |
+|---|---|
+| `test_ga_output_fed_to_dispatcher` | GA-optimised station positions are valid graph nodes that the Dispatcher accepts without error |
+| `test_ga_stations_differ_from_random` | GA placement (after ≥ 5 generations) differs from the random baseline placement used in Sprint 8 |
+| `test_ga_fleet_art_not_worse_than_random` | 200-tick simulation with GA stations achieves ART ≤ ART of a 200-tick run with random stations (fixed seeds) |
+| `test_ga_pipeline_end_to_end` | Running `src/run_ai_fleet.py` logic headless with `headless_ai.yaml` completes without exception |
+
+```python
+def test_ga_pipeline_end_to_end(model_town_graph):
+    """
+    Mirrors what `python src/run_ai_fleet.py --headless --config headless_ai.yaml`
+    does, but invoked directly for test isolation.
+    """
+    from src.sim_config_loader import load_config
+    from src.run_ai_fleet import run_ai_fleet_experiment
+    config = load_config("headless_ai.yaml")
+    config["ticks"] = 100   # Shortened for test speed
+    result = run_ai_fleet_experiment(config)
+    assert result["ART"] > 0
+    assert result["ART"] < float("inf")
+
+def test_ga_stations_differ_from_random(model_town_graph, base_config):
+    from src.run_ai_fleet import run_ga
+    from src.simulation.random_fleet import generate_random_stations
+    ga_stations    = run_ga(graph=model_town_graph, config=base_config, generations=10)
+    random_stations = generate_random_stations(graph=model_town_graph, config=base_config)
+    # After 10 generations the GA should have moved at least one station
+    assert ga_stations != random_stations
+```
+
+---
+
+### Task 3 — Pygame Headless Mode Integration
+
+**File:** `tests/integration/test_pygame_headless.py`
+
+| Test | What It Verifies |
+|---|---|
+| `test_pygame_100_ticks_no_sdl_error` | With `headless=False` (renderer active) and `SDL_VIDEODRIVER=dummy`, 100 ticks complete without `pygame.error` |
+| `test_keydown_lambda_increase` | Synthetic `pygame.KEYDOWN` for `K_PLUS` causes `event_spawner._lambda` to increase by 0.01 |
+| `test_keydown_add_ambulance` | Synthetic `pygame.KEYDOWN` for `K_a` causes `len(dispatcher.ambulances)` to increase by 1 |
+| `test_keydown_hdbscan_trigger` | Synthetic `pygame.KEYDOWN` for `K_k` causes `dispatcher.rebalancing_count` to increment |
+
+```python
+def test_pygame_100_ticks_no_sdl_error(base_config):
+    # SDL_VIDEODRIVER=dummy set by conftest.py
+    import pygame
+    pygame.init()
+    from src.simulation.simulation_engine import SimulationEngine
+    config = {**base_config, "headless": False, "ticks": 100}
+    try:
+        SimulationEngine(config).run()
+    except pygame.error as e:
+        pytest.fail(f"SDL error under dummy driver: {e}")
+    finally:
+        pygame.quit()
+```
+
+---
+
+### Acceptance Criteria Mapping
+
+| Criterion | Implementation |
+|---|---|
+| Test 1: Full simulation run (setup → 100 ticks → shutdown) | `test_full_simulation.py` |
+| Test 2: GA → Dispatcher → Simulation pipeline | `test_ga_pipeline.py` |
+| Test 3: Pygame headless mode runs 100 ticks without SDL error | `test_pygame_headless.py` |
+| Existing Integration Tests | `test_rebalancing.py`, `test_congestion_rerouting.py` exist |
+
+---
+
+## US-043: Edge Cases & Failure Modes
+
+**Story Points:** 4  
+**Acceptance Owner:** Reliability Engineer
+
+### Goal
+
+Every identified failure mode has an explicit test proving the system handles it gracefully — no crashes, no silent data corruption, and a log entry via `sim_logger.py` for each.
+
+### Edge Case Inventory
+
+| Edge Case | Expected Behaviour | Module Responsible |
+|---|---|---|
+| Empty graph / no nodes | `ValueError` raised at startup with clear message; logged | `simulation_engine.py` |
+| No idle ambulances when event arrives | Event queued in `active_events`; not dropped | `dispatcher.py` |
+| All ambulances busy for extended period | ART degrades but stays finite and valid | `dispatcher.py`, `metrics_tracker.py` |
+| Unreachable accident location | Warning in `sim.log`; event skipped; no crash | `astar.py`, `dispatcher.py` |
+| Traffic congestion at 100% | A* terminates (returns `None` or alternative path); no infinite loop | `traffic.py`, `astar.py` |
+| Sprite asset missing from `assets/` | Renderer falls back to colored rectangle; no `FileNotFoundError` | `pygame_renderer.py` |
+
+---
+
+### Task 1 — Empty Graph
+
+**File:** `tests/edge_cases/test_empty_graph.py`
+
+```python
+def test_empty_graph_raises_on_init():
+    import networkx as nx
+    from src.simulation.simulation_engine import SimulationEngine
+    config = make_minimal_config()
+    config["graph_override"] = nx.MultiGraph()   # 0 nodes
+    with pytest.raises(ValueError, match="empty graph"):
+        SimulationEngine(config)
+
+def test_single_node_no_events_no_crash():
+    import networkx as nx
+    G = nx.MultiGraph()
+    G.add_node(0)
+    engine = make_engine_with_graph(G, ticks=10)
+    engine.run()   # No event can spawn with 1 node — must not raise
+```
+
+**Required hardening in `src/simulation/simulation_engine.py`:**
+
+```python
+if len(self.graph.nodes) == 0:
+    self.logger.error("Cannot initialise simulation: graph has no nodes.")
+    raise ValueError("Cannot initialise simulation with an empty graph.")
+```
+
+---
+
+### Task 2 — No Idle Ambulances
+
+**File:** `tests/edge_cases/test_no_idle_ambulances.py`
+
+```python
+def test_event_queued_not_dropped(base_config, minimal_graph):
+    from src.simulation.dispatcher import Dispatcher
+    dispatcher = Dispatcher(graph=minimal_graph, config=base_config)
+    for amb in dispatcher.ambulances:
+        amb.state = "IN_TRANSIT"
+    event = make_dummy_event(node=1)
+    dispatcher.ingest_event(event)
+    assert event in dispatcher.active_events
+
+def test_art_finite_when_all_busy_extended(base_config):
+    import math
+    from src.simulation.simulation_engine import SimulationEngine
+    config = {**base_config, "lambda_rate": 0.5, "num_ambulances": 2, "ticks": 300}
+    engine = SimulationEngine(config)
+    engine.run()
+    art = engine.metrics_tracker.average_response_time()
+    assert math.isfinite(art) and art >= 0
+```
+
+---
+
+### Task 3 — Unreachable Accident Location
+
+**File:** `tests/edge_cases/test_unreachable_node.py`
+
+```python
+def test_unreachable_event_logged_and_skipped(minimal_graph, caplog):
+    import networkx as nx
+    G = minimal_graph.copy()
+    G.add_node(99)   # Island — no edges
+    dispatcher = make_dispatcher(G)
+    event = make_dummy_event(node=99)
+    with caplog.at_level(logging.WARNING):
+        dispatcher.ingest_event(event)
+    # Event must not be assigned to any ambulance
+    assigned = [a.assigned_event for a in dispatcher.ambulances if a.assigned_event]
+    assert event not in assigned
+    # Warning must appear in sim.log output
+    assert any("unreachable" in r.message.lower() or "no path" in r.message.lower()
+               for r in caplog.records)
+```
+
+**Required hardening in `src/simulation/dispatcher.py`** (in `assign_nearest_idle()`):
+
+```python
+if path is None:
+    self.logger.warning(
+        f"Event {event.id} at node {event.node} is unreachable from all "
+        f"ambulances. Event skipped and removed from queue."
+    )
+    self.active_events.remove(event)
+    return
+```
+
+---
+
+### Task 4 — 100% Traffic Congestion
+
+**File:** `tests/edge_cases/test_full_congestion.py`
+
+```python
+def test_astar_terminates_at_max_congestion(model_town_graph):
+    """A* must return path or None — never hang — at maximum edge weights."""
+    from src.astar import astar
+    for u, v, k in model_town_graph.edges(keys=True):
+        model_town_graph[u][v][k]["weight"] = 1e9
+    nodes = list(model_town_graph.nodes)
+    # pytest-timeout enforces the 120s cap from pytest.ini
+    result = astar(model_town_graph, start=nodes[0], goal=nodes[-1])
+    assert result is None or isinstance(result, list)
+
+def test_simulation_continues_under_max_congestion(base_config):
+    """Max congestion degrades ART but must not crash or produce NaN."""
+    import math
+    from src.simulation.simulation_engine import SimulationEngine
+    config = {**base_config, "ticks": 50}
+    engine = SimulationEngine(config)
+    engine.traffic.force_all_congestion(weight=1e9)
+    engine.run()
+    art = engine.metrics_tracker.average_response_time()
+    assert math.isfinite(art)
+```
+
+**Required addition in `src/simulation/traffic.py`** (test helper):
+
+```python
+def force_all_congestion(self, weight: float) -> None:
+    """Set all edge weights to `weight`. Used by edge case tests only."""
+    for u, v, k in self.graph.edges(keys=True):
+        self.graph[u][v][k]["weight"] = weight
+```
+
+---
+
+### Task 5 — Missing Sprite Asset Fallback (second version)
+
+**File:** `tests/edge_cases/test_sprite_fallback.py`
+
+```python
+def test_sprite_fallback_on_missing_png(base_config, tmp_path):
+    """
+    Pointing asset_dir at an empty directory must not crash the renderer.
+    The fallback is a colored pygame.Surface rectangle.
+    """
+    import pygame
+    pygame.init()
+    from src.rendering.pygame_renderer import PygameRenderer
+    config = {**base_config, "asset_dir": str(tmp_path)}
+    try:
+        renderer = PygameRenderer(config=config)
+        surface = pygame.Surface((800, 600))
+        renderer.draw_ambulance(surface=surface, position=(100, 100), state="IDLE")
+    except FileNotFoundError:
+        pytest.fail("Renderer raised FileNotFoundError instead of using fallback")
+    finally:
+        pygame.quit()
+```
+
+**Required hardening in `src/rendering/pygame_renderer.py`:**
+
+```python
+def _load_sprite(self, path: str, fallback_color: tuple) -> pygame.Surface:
+    """
+    Load a sprite PNG. Falls back to a solid-color rectangle if the file
+    is absent — logs a warning via sim_logger but does not raise.
+    """
+    try:
+        return pygame.image.load(path).convert_alpha()
+    except (FileNotFoundError, pygame.error):
+        self.logger.warning(
+            f"Sprite asset not found: {path}. Using colored rectangle fallback."
+        )
+        surface = pygame.Surface((20, 20), pygame.SRCALPHA)
+        surface.fill(fallback_color)
+        return surface
+```
+
+---
+
+### Acceptance Criteria Mapping
+
+| Criterion | Implementation |
+|---|---|
+| Empty graph: handled gracefully | `test_empty_graph.py` + guard in `simulation_engine.py` |
+| No idle ambulances: event queued | `test_no_idle_ambulances.py` |
+| All ambulances busy: ART finite | `test_no_idle_ambulances.py::test_art_finite_when_all_busy_extended` |
+| Unreachable location: logged and skipped | `test_unreachable_node.py` + warning in `dispatcher.py` |
+| 100% congestion: routing adapts | `test_full_congestion.py` + `force_all_congestion()` in `traffic.py` |
+| Missing sprite: colored rectangle fallback | `test_sprite_fallback.py` + `_load_sprite()` in `pygame_renderer.py` |
+
+---
+
+## US-044: Regression Test Suite & CI
 
 **Story Points:** 3  
-**Goal:** Auto-generate a comprehensive Markdown report compiling all three sensitivity analyses.
+**Acceptance Owner:** Developer
 
-### Report Structure
+### Goal
 
-```markdown
-# ResQ-Graph: Sensitivity Analysis Report
+A locked-baseline regression suite anchored to Sprint 10's known results, running in under 2 minutes in a CI environment with headless Pygame support.
 
-**Generated:** {timestamp}
-**Config Version:** 1.0
-**Sprint:** 10
+### Sprint 10 Known Results (anchor for baselines)
 
----
+The Sprint 10 README documents these concrete findings from the 215-run sweep:
 
-## Executive Summary
-
-| Analysis | Key Finding | Recommended Value |
+| Finding | Value | Source |
 |---|---|---|
-| Event Rate (λ) | AI fleet maintains advantage across all λ | λ = 0.05 (baseline config) |
-| Fleet Size (N) | Diminishing returns beyond N=7 | N = 5 (cost-performance optimum) |
-| HDBSCAN Config | {best config from recommend_hdbscan_config()} | mcs=X, ms=Y, interval=Z |
+| AI fleet ART improvement over baseline | ~10% | Sprint 9 comparison |
+| Baseline ART | ~25.7 ticks | Sprint 9 |
+| AI Fleet ART | ~23.1 ticks | Sprint 9 |
+| Optimal `min_cluster_size` | 5 | Sprint 10 sweep |
+| Optimal `rebalance_interval` | 25 ticks | Sprint 10 sweep |
+| Optimal fleet size (ART sweet spot) | 7 ambulances | Sprint 10 sweep |
+| Fleet scaling gain (3→5 ambulances) | ~40% ART reduction | Sprint 10 sweep |
 
 ---
 
-## 1. Event Rate (Lambda) Sensitivity
+### Task 1 — Define Regression Scenarios
 
-### Methodology
-- Lambda values tested: 0.01, 0.05, 0.1, 0.15
-- Runs per value: 5 (each fleet type)
-- Fixed: 5 ambulances, 1000 ticks
+**File:** `tests/regression/test_regression_suite.py`
 
-### Results Table
-| Lambda | Baseline ART | AI ART | Improvement |
+All 12 scenarios use `model_town.graphml`, seeds from `headless_sensitivity.yaml`, and compare against `regression_baselines.json`. Each is marked `@pytest.mark.regression`.
+
+| # | Scenario | Key Parameter | Metric Checked |
 |---|---|---|---|
-| 0.01 | X.XX | X.XX | XX% |
-...
-
-### Visualization
-![Lambda Sensitivity](figures/sensitivity_lambda.png)
-
-### Analysis
-{Auto-generated: at which lambda does the AI advantage erode?
- At which lambda does the system saturate (ART grows non-linearly)?}
-
----
-
-## 2. Fleet Size Sensitivity
-
-### Methodology
-- Fleet sizes tested: 3, 5, 7, 10
-- Limitation: AI fleet for N≠5 uses scaled/padded optimal stations
-  (GA was optimized only for N=5)
-
-### Results Table
-| Fleet Size | Baseline ART | AI ART | Improvement |
-|---|---|---|---|
-| 3 | X.XX | X.XX | XX% |
-...
-
-### Visualization
-![Fleet Size Sensitivity](figures/sensitivity_fleet_size.png)
-
-### Analysis
-{Auto-generated: slope analysis to identify diminishing returns threshold}
-
----
-
-## 3. HDBSCAN Parameter Sensitivity
-
-### Methodology
-- Parameters: min_cluster_size ∈ {3,5,8}, min_samples ∈ {2,3,5},
-  rebalance_interval ∈ {25,50,100}
-- Runs per cell: 3
-- Fixed: AI fleet, λ=0.05, 5 ambulances, 1000 ticks
-
-### Recommended Configuration
-| Parameter | Value | Rationale |
-|---|---|---|
-| min_cluster_size | X | {rationale} |
-| min_samples | X | {rationale} |
-| rebalance_interval | X | {rationale} |
-
-### Visualizations
-![HDBSCAN ART Heatmap](figures/sensitivity_hdbscan_art.png)
-![HDBSCAN Churn vs ART](figures/sensitivity_hdbscan_churn.png)
-
-### Trade-offs: Responsiveness vs Churn
-{Auto-generated discussion: lower interval = faster response to hotspots,
- but more ambulance movement = fewer available for immediate dispatch.}
-
----
-
-## 4. Recommended Configuration
-
-Based on all analyses, the recommended production configuration is:
-
-```yaml
-lambda: 0.05
-num_ambulances: 5
-hdbscan:
-  min_cluster_size: X
-  min_samples: X
-  rebalance_interval: X
-```
-
-## 5. Future Optimization Directions
-
-- Re-run GA for fleet sizes N=3, 7, 10 to get true optimal baselines.
-- Test HDBSCAN with `min_cluster_size` tied to fleet size (e.g., mcs = N).
-- Explore non-uniform lambda (time-of-day demand variation).
-- Investigate RL-based dispatcher as alternative to rule-based assignment.
-```
-
-### SensitivityAnalyser
+| 1 | `baseline_low_lambda` | λ=0.01, baseline strategy | ART ±5% |
+| 2 | `ai_low_lambda` | λ=0.01, AI strategy | ART ±5% |
+| 3 | `baseline_high_lambda` | λ=0.15, baseline strategy | ART ±5% |
+| 4 | `ai_high_lambda` | λ=0.15, AI strategy | ART ±5% |
+| 5 | `ai_beats_baseline` | λ=0.1, both strategies | AI ART ≤ baseline ART |
+| 6 | `small_fleet` | 3 ambulances, AI | ART ±5% |
+| 7 | `sweet_spot_fleet` | 7 ambulances (optimal), AI | ART ±5% |
+| 8 | `large_fleet` | 10 ambulances, AI | ART ±5% |
+| 9 | `hdbscan_optimal` | `min_cluster_size=5`, `rebalance_interval=25` | ART + rebalancing_count ±5% |
+| 10 | `hdbscan_slow_update` | `min_cluster_size=5`, `rebalance_interval=100` | Rebalancing count < scenario 9 |
+| 11 | `ga_stations_improve_art` | GA fleet vs random fleet | GA ART ≤ random ART |
+| 12 | `events_resolved_count` | λ=0.1, 1000 ticks, AI | `total_events_resolved` ±2% |
 
 ```python
-# src/analyze_sensitivity.py
-
-class SensitivityAnalyser:
-    def __init__(self, lambda_csv: str, fleet_csv: str, hdbscan_csv: str):
-        self.lambda_df  = pd.read_csv(lambda_csv)
-        self.fleet_df   = pd.read_csv(fleet_csv)
-        self.hdbscan_df = pd.read_csv(hdbscan_csv)
-
-    def generate_all_plots(self, figures_dir: str) -> None:
-        """Calls visualizer.py for all 4 sensitivity plots."""
-
-    def recommend_hdbscan_config(self) -> dict:
-        """Returns best HDBSCAN config dict per recommendation logic."""
-
-    def generate_report(self, output_path: str) -> None:
-        """Auto-generates sensitivity_report.md."""
+@pytest.mark.regression
+@pytest.mark.parametrize("scenario_name", [
+    "baseline_low_lambda", "ai_low_lambda", "baseline_high_lambda",
+    "ai_high_lambda", "small_fleet", "sweet_spot_fleet", "large_fleet",
+    "hdbscan_optimal", "hdbscan_slow_update", "events_resolved_count",
+])
+def test_regression_scenario(scenario_name, regression_baselines):
+    from src.run_sensitivity import run_single_experiment
+    params = regression_baselines[scenario_name]["params"]
+    expected = regression_baselines[scenario_name]["expected"]
+    result = run_single_experiment(
+        config_path="headless_sensitivity.yaml",
+        overrides=params,
+    )
+    for metric, expected_value in expected.items():
+        tol = regression_baselines[scenario_name].get("tolerance", 0.05)
+        actual = result[metric]
+        assert abs(actual - expected_value) / max(expected_value, 1) <= tol, (
+            f"[{scenario_name}] {metric}: got {actual:.2f}, "
+            f"expected {expected_value:.2f} ±{tol*100:.0f}%"
+        )
 ```
-
-### Tasks Breakdown
-
-1. Implement `SensitivityAnalyser` in `src/analyze_sensitivity.py`.
-2. Implement `generate_report()` with all five sections.
-3. Add all sensitivity plot functions to `src/rendering/visualizer.py`.
-4. Write `src/analyze_sensitivity.py` as both module and entry point.
-5. Verify report renders correctly in GitHub Markdown preview.
-6. Verify recommended config is written back to a `recommended_config.yaml` for downstream use.
 
 ---
 
-## Live Pygame Controls
+### Task 2 — `regression_baselines.json`
 
-This section consolidates all three new key bindings added to `src/main.py`:
+```json
+{
+  "baseline_low_lambda": {
+    "params":   { "lambda_rate": 0.01, "strategy": "baseline", "ticks": 500 },
+    "expected": { "ART": 0.0 },
+    "tolerance": 0.05,
+    "note": "At λ=0.01 almost no events spawn; ART near zero — replace with actual run value"
+  },
+  "ai_low_lambda": {
+    "params":   { "lambda_rate": 0.01, "strategy": "ai", "ticks": 500 },
+    "expected": { "ART": 0.0 },
+    "tolerance": 0.05
+  },
+  "ai_high_lambda": {
+    "params":   { "lambda_rate": 0.15, "strategy": "ai", "ticks": 500 },
+    "expected": { "ART": 23.1 },
+    "tolerance": 0.10,
+    "note": "Sprint 9 known result: AI ART ~23.1 ticks"
+  },
+  "baseline_high_lambda": {
+    "params":   { "lambda_rate": 0.15, "strategy": "baseline", "ticks": 500 },
+    "expected": { "ART": 25.7 },
+    "tolerance": 0.10,
+    "note": "Sprint 9 known result: Baseline ART ~25.7 ticks"
+  },
+  "sweet_spot_fleet": {
+    "params":   { "num_ambulances": 7, "strategy": "ai", "ticks": 500 },
+    "expected": { "ART": 0.0 },
+    "tolerance": 0.05,
+    "note": "Sprint 10 sweet spot fleet; replace ART with actual run value"
+  },
+  "hdbscan_optimal": {
+    "params":   { "min_cluster_size": 5, "rebalance_interval": 25, "strategy": "ai", "ticks": 500 },
+    "expected": { "ART": 0.0, "rebalancing_count": 0 },
+    "tolerance": 0.05,
+    "note": "Sprint 10 optimal config; replace values after first clean run"
+  },
+  "hdbscan_slow_update": {
+    "params":   { "min_cluster_size": 5, "rebalance_interval": 100, "strategy": "ai", "ticks": 500 },
+    "expected": { "rebalancing_count": 0 },
+    "tolerance": 0.05,
+    "note": "Rebalancing count must be lower than hdbscan_optimal"
+  },
+  "events_resolved_count": {
+    "params":   { "lambda_rate": 0.1, "strategy": "ai", "ticks": 1000 },
+    "expected": { "total_events_resolved": 94 },
+    "tolerance": 0.02
+  }
+}
+```
 
-| Key | Action | Component Modified |
+> **Process:** Run `pytest tests/regression/ -v` once on clean Sprint 10 `main`, capture actual output values, replace all `0.0` placeholders in this JSON, then commit the file. All future CI runs compare against those locked numbers.
+
+---
+
+### Task 3 — Runtime Budget
+
+Verify the regression suite runs within 2 minutes:
+
+```bash
+time pytest tests/regression/ -v --timeout=120
+```
+
+If over budget, reduce `ticks` for all regression scenarios from 500 to 200. The ART ratios between strategies remain valid at shorter runs with fixed seeds — only absolute ART values change, which is why they are seeded and tolerance-banded rather than exact.
+
+---
+
+### Task 4 — CI Configuration (second version)
+
+**File:** `.github/workflows/ci.yml`
+
+```yaml
+name: ResQ-Graph CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    env:
+      SDL_VIDEODRIVER: dummy      # Headless Pygame for all steps
+      SDL_AUDIODRIVER: dummy
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Unit tests
+        run: pytest tests/unit/ -v --tb=short
+
+      - name: Integration tests
+        run: pytest tests/integration/ -v --tb=short
+
+      - name: Edge case tests
+        run: pytest tests/edge_cases/ -v --tb=short
+
+      - name: Regression suite (≤ 2 min)
+        run: pytest tests/regression/ -v --timeout=120
+
+      - name: Coverage gate (≥ 80%)
+        run: pytest --cov=src --cov-fail-under=80 --cov-report=xml tests/
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+```
+
+**Key CI guarantees:**
+- `SDL_VIDEODRIVER=dummy` is set at the job `env:` level — enforced for every step, not just the Pygame ones
+- Unit, integration, edge case, and regression failures are reported as separate step failures
+- Coverage gate is a distinct step so a coverage miss does not suppress test failure details
+
+---
+
+### Acceptance Criteria Mapping
+
+| Criterion | Implementation |
+|---|---|
+| Regression suite: 10+ scenarios with known outputs | 12 scenarios in `test_regression_suite.py` anchored to Sprint 10 findings |
+| All baseline results recorded | `regression_baselines.json` with per-scenario tolerance bands |
+| Test suite runs in < 2 minutes | `--timeout=120`; `ticks` reduced if needed |
+| CI-ready: `SDL_VIDEODRIVER=dummy` in CI environment | `env:` block in `ci.yml` |
+| All tests pass before merge | `ci.yml` triggers on every PR to `main` |
+
+---
+
+## Coverage Analysis
+
+### Running Coverage
+
+```bash
+# Full HTML report (open in browser after running)
+pytest --cov=src --cov-report=html tests/
+open htmlcov/index.html
+
+# Terminal summary with per-file missing lines
+pytest --cov=src --cov-report=term-missing tests/
+
+# CI gate — fails build if < 80%
+pytest --cov=src --cov-fail-under=80 tests/
+```
+
+### Per-Module Coverage Targets
+
+| Module | Target | Rationale |
 |---|---|---|
-| `+` / `=` | Increase lambda by 0.01 (max 0.30) | `EventSpawner.set_lambda()` |
-| `-` | Decrease lambda by 0.01 (min 0.001) | `EventSpawner.set_lambda()` |
-| `A` | Add one IDLE ambulance at a random node | `SimulationEngine.add_ambulance()` |
-| `K` | Manually trigger HDBSCAN rebalance now | `DispatcherBrain` direct call |
+| `src/astar.py` | ≥ 90% | Pure logic; fully unit-testable on synthetic graphs |
+| `src/intelligence/hdbscan.py` | ≥ 85% | Custom implementation; all branches reachable in unit tests |
+| `src/intelligence/demand_clustering.py` | ≥ 85% | Interface layer; covered by unit + integration |
+| `src/simulation/dispatcher.py` | ≥ 85% | All state transitions exercised by unit + edge case tests |
+| `src/simulation/assignment.py` | ≥ 90% | Pure O(1) logic; straightforward to cover |
+| `src/simulation/traffic.py` | ≥ 80% | Congestion paths covered by edge case tests |
+| `src/simulation/metrics_tracker.py` | ≥ 85% | CSV export covered by integration test |
+| `src/run_ai_fleet.py` (GA) | ≥ 75% | GA internals covered by unit tests; some generation loops need integration |
+| `src/rendering/pygame_renderer.py` | ≥ 70% | Lower target: some draw paths only reachable under real display |
+| `src/simulation/event_spawner.py` | ≥ 80% | `set_lambda()` covered by Sprint 10 controls tests |
 
-### HUD Updates
+### `.coveragerc`
 
-The existing HUD panel gains two new lines to surface live parameter state:
+```ini
+[coverage:run]
+source = src
 
+[coverage:report]
+omit =
+    src/distance_matrix.py    # One-time precompute script; not runtime logic
+    src/main.py               # Entry point; covered indirectly by integration tests
+
+[coverage:html]
+directory = htmlcov
 ```
-┌─────────────────────────────────────┐
-│  Tick:               1042           │
-│  Active Events:      3              │
-│  Idle Ambulances:    2 / 6          │  ← N updates when A pressed
-│  Avg Response Time:  6.4 ticks      │
-│  Events Resolved:    47             │
-│  Fleet Utilisation:  67%            │
-│  Lambda (λ):         0.07           │  ← NEW: updates on +/-
-│  Last HDBSCAN:       tick 1000      │  ← NEW: updates on K or auto
-└─────────────────────────────────────┘
-```
-
-### Design Constraints for Live Controls
-
-- Live controls affect the **running simulation** only — they do not modify `sim_config.yaml` or `headless_sensitivity.yaml`.
-- Lambda changes are not retroactive — events already spawned at a higher rate remain active.
-- Adding ambulances with `A` uses the same `generate_random_fleet()` logic with a time-based seed to avoid determinism issues in the live window.
-- `K` key triggers a single rebalance call immediately, independent of the `rebalance_interval` timer.
-- All three controls log their actions via `sim_logger.py` at INFO level.
 
 ---
 
-## Integration & Cross-Cutting Concerns
+## Deliverables Checklist
 
-### Sweep Runner Entry Point
+### New Test Files
+- [ ] `tests/conftest.py` — shared fixtures + session-level SDL dummy enforcement
+- [ ] `tests/unit/test_astar.py`
+- [ ] `tests/unit/test_genetic_algorithm.py`
+- [ ] `tests/unit/test_renderer.py`
+- [ ] `tests/integration/test_full_simulation.py`
+- [ ] `tests/integration/test_ga_pipeline.py`
+- [ ] `tests/integration/test_pygame_headless.py`
+- [ ] `tests/edge_cases/test_empty_graph.py`
+- [ ] `tests/edge_cases/test_no_idle_ambulances.py`
+- [ ] `tests/edge_cases/test_unreachable_node.py`
+- [ ] `tests/edge_cases/test_full_congestion.py`
+- [ ] `tests/edge_cases/test_sprite_fallback.py`
+- [ ] `tests/regression/test_regression_suite.py`
+- [ ] `tests/regression/regression_baselines.json` *(placeholder values; must be populated from a clean run before merging)*
 
-All three sweep runners are orchestrated from a single entry point:
+### New Config Files
+- [ ] `pytest.ini` — markers, timeout, test path configuration
+- [ ] `.coveragerc` — source, omit list, HTML output directory
+- [ ] `.github/workflows/ci.yml` — full CI pipeline with SDL headless environment
 
-```bash
-python src/run_sensitivity.py --headless --config headless_sensitivity.yaml
-```
-
-The runner executes sweeps in order (lambda → fleet → HDBSCAN) and logs progress:
-```
-[Sensitivity] Starting lambda sweep (40 runs)...
-[Sensitivity] Lambda sweep complete. CSV saved.
-[Sensitivity] Starting fleet size sweep (40 runs)...
-[Sensitivity] Fleet sweep complete. CSV saved.
-[Sensitivity] Starting HDBSCAN sweep (81 runs)...
-[Sensitivity] HDBSCAN sweep complete. CSV saved.
-[Sensitivity] Total wall time: XX.X minutes
-```
-
-**Headless enforcement:** Per the README AI context note, `SDL_VIDEODRIVER=dummy` must be set **before** any `pygame` import. `run_sensitivity.py` must follow the same pattern as `run_baseline.py` — read the config, set the env var, then import/init pygame. Never set it after `pygame.init()`.
-
-The analysis and report are generated separately:
-```bash
-python src/analyze_sensitivity.py
-```
-
-### What This Sprint Does NOT Modify
-
-- `src/rendering/pygame_renderer.py` — HUD text additions only (no structural change)
-- `src/simulation/dispatcher.py` — only new public counter attributes added
-- `src/simulation/ambulance.py` — unchanged
-- `src/intelligence/hdbscan.py` — unchanged (params passed in, algorithm unchanged)
-- `sim_config.yaml` — unchanged (sweep uses `headless_sensitivity.yaml`)
-
-### Seed Isolation Across Sweeps
-
-Each sweep uses a different seed offset range to prevent cross-contamination:
-```
-lambda sweep:     event_seed + (lambda_idx   * 100) + run_id
-fleet sweep:      event_seed + (fleet_idx    * 100) + run_id  (+ 1000 base offset)
-HDBSCAN sweep:    event_seed + (cell_idx     * 100) + run_id  (+ 5000 base offset)
-```
-
-The base offsets (0, 1000, 5000) are constants in `run_sensitivity.py`, not in the config.
-
-### AI Fleet Scaling Limitation (US-038)
-
-The plan to use `optimal_fleet[:N]` for N<5 and `optimal_fleet + random_extra` for N>5 is a known limitation — the GA was optimized only for N=5. This limitation is:
-1. Documented in the `_get_fleet()` docstring.
-2. Noted explicitly in the US-040 report methodology section.
-3. Listed under "Future Optimization Directions" in the report.
-
----
-
-## Testing Strategy
-
-### US-037 — Lambda Sweep Tests
-
-| Test | Assertion |
-|---|---|
-| Seed isolation | Runs at λ=0.01 and λ=0.15 use different event seeds |
-| ART increases with λ | `mean_art` monotonically increases across λ values (approximate) |
-| CSV schema | `lambda_sweep.csv` has all required columns |
-| `+` key | `engine.event_spawner.lambda_rate` increases after keypress |
-| `-` key | Lambda does not go below 0.001 |
-
-### US-038 — Fleet Sweep Tests
-
-| Test | Assertion |
-|---|---|
-| Fleet scaling — fewer | `len(ai_fleet) == 3` when `num_ambulances=3` |
-| Fleet scaling — more | `len(ai_fleet) == 7` when `num_ambulances=7`; extra nodes not in optimal_fleet |
-| ART decreases with fleet size | `mean_art` generally decreases as N increases |
-| `add_ambulance()` | `len(engine.ambulances)` increments by 1 after call |
-| `A` key | New ambulance appears in IDLE state in renderer |
-
-### US-039 — HDBSCAN Sweep Tests
-
-| Test | Assertion |
-|---|---|
-| Cell count | `len(results) == 27` after full sweep (3×3×3) |
-| No HDBSCAN crash | Engine runs 3 runs per cell at all 27 parameter combos without error |
-| Noise fraction bounds | `0.0 <= mean_noise_fraction <= 1.0` for all rows |
-| Recommendation filter | `recommend_hdbscan_config()` returns a single config dict |
-| `K` key | `dispatcher.rebalance_count` increments by 1 after keypress |
-| Low `min_cluster_size` | mcs=3 produces more clusters and lower noise fraction than mcs=8 |
-
-### US-040 — Report Tests
-
-| Test | Assertion |
-|---|---|
-| All 4 PNGs created | Files exist in `outputs/figures/` after `generate_all_plots()` |
-| Report created | `outputs/sensitivity_report.md` exists and is non-empty |
-| Recommended config | `recommended_config.yaml` written with all three HDBSCAN params |
-| Section count | Report contains all 5 sections |
-
----
-
-## Definition of Done
-
-- All acceptance criteria from both the original and Pygame-updated specification are met.
-- HDBSCAN sensitivity replaces K-Means sensitivity throughout (no reference to `k` parameter).
-- 40 lambda sweep runs + 40 fleet sweep runs + 81 HDBSCAN sweep runs complete headless without error.
-- All 4 Matplotlib plots saved to `outputs/figures/` as PNG.
-- `lambda_sweep.csv`, `fleet_sweep.csv`, `hdbscan_sweep.csv` present in `outputs/sensitivity/`.
-- `+`/`-`, `A`, and `K` key controls functional in windowed mode; HUD displays updated values.
-- `sensitivity_report.md` auto-generated with all five sections populated.
-- `recommended_config.yaml` written with final HDBSCAN recommendation.
-- Unit tests pass for all new sweep runners and live controls.
-- Sprint board card moved to Done.
+### Hardening Changes to Existing Source Files
+- [ ] `src/simulation/simulation_engine.py` — empty-graph `ValueError` guard at `__init__`
+- [ ] `src/simulation/dispatcher.py` — unreachable event `logger.warning` + skip
+- [ ] `src/simulation/traffic.py` — `force_all_congestion(weight)` test helper method
+- [ ] `src/rendering/pygame_renderer.py` — `_load_sprite()` with colored-rectangle fallback
 
 ---
 
@@ -946,90 +949,10 @@ The plan to use `optimal_fleet[:N]` for N<5 and `optimal_fleet + random_extra` f
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| 81 HDBSCAN runs too slow (> 20 min) | Medium | Medium | Reduce `num_runs_per_config` to 3; note in report |
-| HDBSCAN raises exception at extreme params (mcs=8, ms=5 with few events) | Medium | High | Wrap `_single_run()` in try/except; log failed cells; skip in analysis |
-| AI fleet scaling for N≠5 produces misleading results | Medium | Medium | Document limitation prominently; grey out N≠5 AI data points in plot |
-| `A` key adds ambulance without graph/dispatcher sync | Low | High | `add_ambulance()` must update both `engine.ambulances` and `dispatcher.ambulances` atomically |
-| Lambda live control interferes with headless sweep | None | High | `+`/`-` handlers guarded by `if not config["headless"]` check |
-| Seed collision across sweep types | Low | Medium | Confirmed by base offset constants (0, 1000, 5000) — assert no overlap in tests |
-
----
-
-## Suggested File Structure
-
-The structure below is grounded in the README file tree (current as of Sprint 9). Files marked "From Sprint 9" exist as Sprint 9 deliverables but are not yet reflected in the README's file tree. All new Sprint 10 files are marked "NEW".
-
-```
-resq-graph/
-├── data/
-│   ├── model_town.graphml             # Unchanged
-│   ├── node_positions.json            # Unchanged
-│   ├── map_bg.png                     # Unchanged
-│   ├── distance_matrix.npy            # Unchanged
-│   └── traffic_distance_matrix.npy    # From Sprint 9
-├── outputs/
-│   ├── figures/                       # ALL matplotlib plots (exists per README)
-│   │   ├── [Sprint 8 baseline plots]  # Already present per README
-│   │   ├── [Sprint 9 comparison plots] # From Sprint 9 — confirm present
-│   │   ├── sensitivity_lambda.png             # NEW
-│   │   ├── sensitivity_fleet_size.png         # NEW
-│   │   ├── sensitivity_hdbscan_art.png        # NEW
-│   │   └── sensitivity_hdbscan_churn.png      # NEW
-│   ├── sensitivity/                           # NEW directory
-│   │   ├── lambda_sweep.csv                   # NEW
-│   │   ├── fleet_sweep.csv                    # NEW
-│   │   └── hdbscan_sweep.csv                  # NEW
-│   ├── baseline_results.csv           # Sprint 8 — confirmed in README
-│   ├── baseline_report.md             # Sprint 8 — confirmed in README
-│   ├── random_fleet_log.json          # Sprint 8 — confirmed in README
-│   ├── optimal_stations.json          # From Sprint 3
-│   ├── ai_results.csv                 # From Sprint 9 — confirm present
-│   ├── ai_response_times.csv          # From Sprint 9 — confirm present
-│   ├── comparison_metrics.json        # From Sprint 9 — confirm present
-│   ├── comparison_report.md           # From Sprint 9 — confirm present
-│   ├── sensitivity_report.md          # NEW: auto-generated by analyze_sensitivity.py
-│   └── recommended_config.yaml        # NEW: HDBSCAN recommendation output
-├── src/
-│   ├── main.py                        # UPDATED: +/-, A, K key handlers + 2 new HUD lines
-│   ├── config.py                      # Unchanged
-│   ├── sim_config_loader.py           # Unchanged
-│   ├── run_baseline.py                # Sprint 8 — confirmed in README
-│   ├── analyze_baseline.py            # Sprint 8 — confirmed in README
-│   ├── run_ai_fleet.py                # From Sprint 9 — confirm present
-│   ├── analyze_comparison.py          # From Sprint 9 — confirm present
-│   ├── split_screen_demo.py           # From Sprint 9 — confirm present
-│   ├── run_sensitivity.py             # NEW: all three sweep runners + entry point
-│   ├── analyze_sensitivity.py         # NEW: SensitivityAnalyser + entry point
-│   ├── astar.py                       # Unchanged
-│   ├── distance_matrix.py             # Unchanged
-│   ├── intelligence/
-│   │   ├── hdbscan.py                 # Unchanged
-│   │   ├── demand_clustering.py       # Unchanged
-│   │   └── traffic_profiler.py        # From Sprint 9
-│   ├── rendering/
-│   │   ├── pygame_renderer.py         # UPDATED: 2 new HUD lines (lambda, last HDBSCAN tick)
-│   │   └── visualizer.py             # UPDATED: 4 new sensitivity plot functions
-│   └── simulation/
-│       ├── ambulance.py               # Unchanged
-│       ├── assignment.py              # Unchanged
-│       ├── dispatcher.py              # UPDATED: rebalance_count, mean_clusters, mean_noise attrs
-│       ├── event_spawner.py           # Unchanged (set_lambda() exists from Sprint 7)
-│       ├── metrics_tracker.py         # Unchanged
-│       ├── random_fleet.py            # Sprint 8 — confirmed in README
-│       ├── sim_logger.py              # Unchanged
-│       ├── simulation_engine.py       # UPDATED: add_ambulance(), hdbscan/rebalance params
-│       └── traffic.py                 # Unchanged
-├── tests/                             # Confirmed in README
-│   ├── [existing Sprint 1–9 tests]    # Unchanged
-│   ├── test_run_sensitivity.py        # NEW: all three sweep runners
-│   └── test_analyze_sensitivity.py    # NEW: analyser + recommendation logic
-├── headless_sensitivity.yaml          # NEW: committed to repo root
-├── headless_ai.yaml                   # From Sprint 9 — confirm present
-├── headless_baseline.yaml             # Sprint 8 — confirmed in README
-├── sim_config.yaml                    # Confirmed in README — unchanged
-└── README.md                          # UPDATED: Sprint 10 run instructions
-```
-
----
-
-*Plan prepared for Sprint 10 — Week 10. File structure is grounded in the README tree current as of Sprint 9. All new scripts follow the `src/` convention from Sprints 8–9. Plots go to `outputs/figures/`. Raw sweep CSVs go to the new `outputs/sensitivity/` subdirectory. The HDBSCAN sensitivity analysis replaces the original K-Means `k` sensitivity per the algorithm decision in the Sprints 6–7 plan. Actual Sprint 9 ART results: Baseline ~25.7 ticks, AI ~23.1 ticks (+10.3% improvement, p < 0.01) — use these as reference points in sweep plots.*
+| GA unit tests require access to GA internals not exposed as importable functions | Medium | Medium | Refactor GA helper functions (`compute_fitness`, `mutate`, `crossover`) to be importable from `src/run_ai_fleet.py` before writing tests |
+| Integration tests too slow with 500-tick runs | Medium | Medium | Set integration test `ticks=100`; regression suite uses 500 ticks with fixed seeds |
+| `model_town_graph` fixture reloads `.graphml` for every test | High | Medium | Scope the fixture to `session` in `conftest.py`; one load for the entire test run |
+| Regression baselines populated on a dirty codebase | Low | High | Populate `regression_baselines.json` only on a clean `main` immediately after Sprint 10 merges |
+| `SDL_VIDEODRIVER=dummy` not set before Pygame import in a new test file | Low | High | `conftest.py` sets it at module level (not inside a fixture) so import-time side effects are covered |
+| `force_all_congestion()` mutates shared graph state between tests | Medium | Medium | Test uses `model_town_graph` copy (`G.copy()`) not the session-scoped fixture; teardown resets weights |
+| Coverage gate blocks PR due to low renderer coverage | Low | Medium | Renderer target set to 70%; untestable display paths documented in `.coveragerc` comments |

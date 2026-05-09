@@ -217,7 +217,7 @@ class DispatcherBrain:
 
         if path is None:
             logger.warning(
-                "Event %d at node %d is UNREACHABLE from ambulance %d at node %d. "
+                "Event %d at node %s is UNREACHABLE from ambulance %d at node %s. "
                 "Skipping assignment.",
                 event.id, event.location, ambulance.id, ambulance.current_location,
             )

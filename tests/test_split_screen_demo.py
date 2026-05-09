@@ -49,15 +49,15 @@ def test_build_engine_returns_correct_types():
         "POISSON_LAMBDA": 0.05,
         "TRAFFIC_ENABLED": False,
     }
-    ambs, spawner, disp, traffic, state = _build_engine(
-        cfg, stations, 42, graph, node_positions, dm, ni
+    engine = _build_engine(
+        cfg, stations, 42, graph, node_positions, dm
     )
 
-    assert isinstance(ambs, list) and len(ambs) == 5
-    assert isinstance(spawner, EventSpawner)
-    assert isinstance(disp, DispatcherBrain)
-    assert traffic is None   # TRAFFIC_ENABLED=False
-    assert isinstance(state, SimulationState)
+    assert isinstance(engine.ambulances, list) and len(engine.ambulances) == 5
+    assert isinstance(engine.spawner, EventSpawner)
+    assert isinstance(engine.dispatcher, DispatcherBrain)
+    assert engine.traffic is None   # TRAFFIC_ENABLED=False
+    assert isinstance(engine.state, SimulationState)
     pygame.quit()
 
 
@@ -67,7 +67,7 @@ def test_dual_engine_tick_parity():
     pygame.init()
 
     from src.simulation.simulation_engine import (
-        load_graph, load_node_positions, _load_or_compute_matrix, _tick,
+        load_graph, load_node_positions, _load_or_compute_matrix,
     )
     from src.split_screen_demo import _build_engine
 
@@ -78,18 +78,18 @@ def test_dual_engine_tick_parity():
     node_ids = list(node_positions.keys())
     cfg = {"NUM_AMBULANCES": 5, "POISSON_LAMBDA": 0.05, "TRAFFIC_ENABLED": False}
 
-    ambs_b, spawner_b, disp_b, traffic_b, state_b = _build_engine(
-        cfg, node_ids[:5], 42, graph, node_positions, dm, ni)
-    ambs_a, spawner_a, disp_a, traffic_a, state_a = _build_engine(
-        cfg, node_ids[5:10], 42, graph, node_positions, dm, ni)
+    engine_b = _build_engine(
+        cfg, node_ids[:5], 42, graph, node_positions, dm)
+    engine_a = _build_engine(
+        cfg, node_ids[5:10], 42, graph, node_positions, dm)
 
     N = 20
     for _ in range(N):
-        _tick(state_b, ambs_b, spawner_b, disp_b, node_positions, traffic_b, None)
-        _tick(state_a, ambs_a, spawner_a, disp_a, node_positions, traffic_a, None)
+        engine_b._tick()
+        engine_a._tick()
 
-    assert state_b.current_tick == N
-    assert state_a.current_tick == N
+    assert engine_b.state.current_tick == N
+    assert engine_a.state.current_tick == N
 
     pygame.quit()
 

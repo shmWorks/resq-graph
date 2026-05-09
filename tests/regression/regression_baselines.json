@@ -1,0 +1,9 @@
+{
+  "baseline_100_ticks": {
+    "art": 17.58,
+    "total_events": 12,
+    "min_rt": 11,
+    "max_rt": 30,
+    "std_dev": 6.71
+  }
+}

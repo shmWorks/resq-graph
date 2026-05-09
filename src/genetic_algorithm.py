@@ -199,7 +199,8 @@ class GeneticAlgorithm:
                 original_node = best_genome[i]
                 # Try a few random nodes to swap with (Stochastic Hill Climbing)
                 # In a graph, we'd try neighbors, but random works for facility location.
-                candidates = random.sample(self.nodes, 10) 
+                sample_size = min(10, len(self.nodes))
+                candidates = random.sample(self.nodes, sample_size) 
                 for candidate in candidates:
                     if candidate in best_genome: continue
                     
