@@ -2,7 +2,7 @@
 
 ResQ-Graph is an agent-based graph simulation for emergency ambulance dispatch. It models a fleet of ambulances navigating a city road network (represented as a graph) to respond to dynamically generated emergency events. The project aims to simulate, visualize, and optimize response times using smart dispatch algorithms, dynamic fleet rebalancing, and realistic traffic models.
 
-This repository is currently up-to-date through **Sprint 10**.
+This repository is currently up-to-date through **Sprint 9**.
 
 ## Core Architecture & Components
 
@@ -150,9 +150,9 @@ records every placement set for full reproducibility auditing.
 
 ---
 
-## Reproducing the AI Comparison (Sprint 9 & 10)
+## Reproducing the AI Comparison (Sprint 9)
 
-Sprint 9 introduced the AI vs Baseline comparison, and Sprint 10 added a **Traffic-Aware GA** and a **Return to Base** fleet policy, resulting in a highly significant improvement.
+Sprint 9 introduced the AI vs Baseline comparison, including a **Traffic-Aware GA** and a **Return to Base** fleet policy, resulting in a highly significant improvement.
 
 To reproduce the AI comparison:
 
@@ -171,7 +171,7 @@ python src/run_ai_fleet.py --headless --config headless_ai.yaml
 python src/analyze_comparison.py
 ```
 
-### Final Results (Sprint 10)
+### Final Results (Sprint 9)
 - **Baseline ART**: ~25.7 ticks
 - **AI Fleet ART**: ~23.1 ticks
 - **Improvement**: **+10.3%**
