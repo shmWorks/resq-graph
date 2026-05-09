@@ -1,12 +1,12 @@
 {
-  "baseline_mean_art": 25.831,
-  "baseline_std_art": 1.628,
-  "ai_mean_art": 25.673,
-  "ai_std_art": 1.516,
-  "pct_improvement": 0.61,
-  "t_statistic": 0.3421,
-  "p_value": 0.740154,
-  "cohens_d": 0.1004,
+  "baseline_mean_art": 25.412,
+  "baseline_std_art": 0.731,
+  "ai_mean_art": 25.338,
+  "ai_std_art": 0.727,
+  "pct_improvement": 0.29,
+  "t_statistic": 1.7493,
+  "p_value": 0.090817,
+  "cohens_d": 0.1016,
   "significant": false,
-  "n_runs": 10
+  "n_runs": 30
 }

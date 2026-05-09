@@ -52,8 +52,8 @@ from src.run_ai_fleet import load_optimal_fleet
 
 
 # ── Layout constants ──────────────────────────────────────────────────────────
-PANEL_W      = 1100
-PANEL_H      = 750
+PANEL_W      = 900
+PANEL_H      = 650
 HEADER_H     = 60
 DIVIDER_W    = 4
 TOTAL_W      = PANEL_W * 2 + DIVIDER_W
@@ -179,7 +179,7 @@ def main() -> None:
 
     max_ticks    = args.ticks
     event_seed   = int(cfg.get("event_seed", args.seed))
-    headless     = _pre.headless or (int(cfg.get("TARGET_FPS", 30)) == 0)
+    headless     = _pre.headless
 
     pygame.init()
     pygame.display.set_caption("ResQ-Graph — Split-Screen Demo")
@@ -227,6 +227,9 @@ def main() -> None:
     paused  = False
 
     print("\n[Demo] Split-screen loaded. Press ENTER to start.")
+
+    # Clear any residual events (e.g. the ENTER key that triggered the transition)
+    pygame.event.clear()
 
     while running:
         for event in pygame.event.get():

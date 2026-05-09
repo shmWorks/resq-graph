@@ -1,6 +1,6 @@
 # Fleet Comparison Report — AI vs Random Baseline (Sprint 9)
 
-*Generated automatically by `src/analyze_comparison.py` on 2026-05-09 05:35 UTC*
+*Generated automatically by `src/analyze_comparison.py` on 2026-05-09 07:26 UTC*
 
 ---
 
@@ -8,8 +8,8 @@
 
 | Metric | Baseline (Random) | AI Optimised | Δ |
 |--------|:-----------------:|:------------:|:---:|
-| Grand mean ART (ticks) | 25.83 | 25.67 | +0.6% |
-| Std dev across runs | 1.63 | 1.52 | — |
+| Grand mean ART (ticks) | 25.41 | 25.34 | +0.3% |
+| Std dev across runs | 0.73 | 0.73 | — |
 
 ---
 
@@ -17,13 +17,13 @@
 
 | Test | Value |
 |------|-------|
-| Paired t-statistic | 0.3421 |
-| Two-tailed p-value | 0.740154 |
-| Cohen's d | 0.1004 |
+| Paired t-statistic | 1.7493 |
+| Two-tailed p-value | 0.090817 |
+| Cohen's d | 0.1016 |
 | Significant (α=0.05) | No ✗ |
 
-The improvement is **not statistically significant** (p=0.7402).
-A positive Cohen's d = 0.1004 indicates the AI fleet outperforms the random baseline.
+The improvement is **not statistically significant** (p=0.0908).
+A positive Cohen's d = 0.1016 indicates the AI fleet outperforms the random baseline.
 
 ---
 
@@ -45,9 +45,9 @@ A positive Cohen's d = 0.1004 indicates the AI fleet outperforms the random base
 
 ## Methodology
 
-- **Baseline**: 10 runs × 1000 ticks with random station placement
+- **Baseline**: 30 runs × 1000 ticks with random station placement
   (`src/run_baseline.py`, Sprint 8).
-- **AI fleet**: Same 10 runs × 1000 ticks with GA-optimised fixed stations
+- **AI fleet**: Same 30 runs × 1000 ticks with GA-optimised fixed stations
   (`src/run_ai_fleet.py`, Sprint 9).
 - **Seed parity**: Both experiments used identical per-run event seeds to ensure
   the event sequence is identical for each paired run.

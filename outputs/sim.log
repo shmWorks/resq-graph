@@ -540,3 +540,42 @@
 00:20:31 [INFO    ] src.simulation.dispatcher: Ambulance 0 → REBALANCING toward hotspot 0 centroid node 4836682663.
 00:20:38 [INFO    ] src.simulation.simulation_engine: Simulation ended at tick 10000.
 00:20:38 [INFO    ] src.simulation.metrics_tracker: Summary CSV written to outputs/metrics_summary.csv
+11:19:19 [[32mINFO[0m] src.simulation.sim_logger: Logging configured: level=INFO, file=outputs/sim.log
+11:19:21 [[32mINFO[0m] src.simulation.simulation_engine: Loading distance matrix from data/distance_matrix.npy ...
+11:19:21 [[32mINFO[0m] src.simulation.simulation_engine: Traffic model initialised (max_mult=2.5).
+11:19:21 [[32mINFO[0m] src.simulation.simulation_engine: Simulation starting: 5 ambulances, 10000 ticks, profile=None.
+11:19:25 [[32mINFO[0m] src.simulation.simulation_engine: Transitioning to split-screen demo...
+11:19:25 [[32mINFO[0m] src.simulation.simulation_engine: Simulation ended at tick 112.
+11:19:25 [[32mINFO[0m] src.simulation.metrics_tracker: Summary CSV written to outputs/metrics_summary.csv
+11:19:25 [[32mINFO[0m] src.sim_config_loader: Loaded base config from headless_ai.yaml
+11:20:09 [[32mINFO[0m] src.simulation.sim_logger: Logging configured: level=INFO, file=outputs/sim.log
+11:20:10 [[32mINFO[0m] src.simulation.simulation_engine: Loading distance matrix from data/distance_matrix.npy ...
+11:20:10 [[32mINFO[0m] src.simulation.simulation_engine: Traffic model initialised (max_mult=2.5).
+11:20:10 [[32mINFO[0m] src.simulation.simulation_engine: Simulation starting: 5 ambulances, 10000 ticks, profile=None.
+11:20:12 [[32mINFO[0m] src.simulation.simulation_engine: Transitioning to split-screen demo...
+11:20:12 [[32mINFO[0m] src.simulation.simulation_engine: Simulation ended at tick 57.
+11:20:12 [[32mINFO[0m] src.simulation.metrics_tracker: Summary CSV written to outputs/metrics_summary.csv
+11:20:12 [[32mINFO[0m] src.sim_config_loader: Loaded base config from headless_ai.yaml
+11:22:40 [[32mINFO[0m] src.simulation.sim_logger: Logging configured: level=INFO, file=outputs/sim.log
+11:22:41 [[32mINFO[0m] src.simulation.simulation_engine: Loading distance matrix from data/distance_matrix.npy ...
+11:22:42 [[32mINFO[0m] src.simulation.simulation_engine: Traffic model initialised (max_mult=2.5).
+11:22:42 [[32mINFO[0m] src.simulation.simulation_engine: Simulation starting: 5 ambulances, 10000 ticks, profile=None.
+11:22:45 [[32mINFO[0m] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=588435528, pixel=(432, 546)
+11:22:45 [[32mINFO[0m] src.simulation.dispatcher: Rebalance tick 99: 1 hotspot(s), 2 idle ambulance(s).
+11:22:45 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 3 → REBALANCING toward hotspot 0 centroid node 588435528.
+11:22:46 [[32mINFO[0m] src.simulation.dispatcher: CONGESTION_DETECTED: Ambulance 2 re-routing (weight increase 27.2%, threshold 20.0%).
+11:22:47 [[32mINFO[0m] src.intelligence.demand_clustering: Hotspot 0: 3 members, centroid node=5652253133, pixel=(682, 402)
+11:22:47 [[32mINFO[0m] src.simulation.dispatcher: Rebalance tick 149: 1 hotspot(s), 2 idle ambulance(s).
+11:22:47 [[32mINFO[0m] src.simulation.dispatcher: Ambulance 3 → REBALANCING toward hotspot 0 centroid node 5652253133.
+11:22:47 [[32mINFO[0m] src.simulation.simulation_engine: Transitioning to split-screen demo...
+11:22:47 [[32mINFO[0m] src.simulation.simulation_engine: Simulation ended at tick 160.
+11:22:47 [[32mINFO[0m] src.simulation.metrics_tracker: Summary CSV written to outputs/metrics_summary.csv
+11:22:47 [[32mINFO[0m] src.sim_config_loader: Loaded base config from headless_ai.yaml
+11:26:01 [[32mINFO[0m] src.simulation.sim_logger: Logging configured: level=INFO, file=outputs/sim.log
+11:26:02 [[32mINFO[0m] src.simulation.simulation_engine: Loading distance matrix from data/distance_matrix.npy ...
+11:26:02 [[32mINFO[0m] src.simulation.simulation_engine: Traffic model initialised (max_mult=2.5).
+11:26:02 [[32mINFO[0m] src.simulation.simulation_engine: Simulation starting: 5 ambulances, 10000 ticks, profile=None.
+11:26:04 [[32mINFO[0m] src.simulation.simulation_engine: Transitioning to split-screen demo...
+11:26:04 [[32mINFO[0m] src.simulation.simulation_engine: Simulation ended at tick 37.
+11:26:04 [[32mINFO[0m] src.simulation.metrics_tracker: No events resolved; skipping summary CSV export.
+11:26:04 [[32mINFO[0m] src.sim_config_loader: Loaded base config from headless_ai.yaml

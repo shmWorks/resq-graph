@@ -15,15 +15,15 @@ ambulance_seed: 200
 # Baseline experiment parameters
 # ---------------------------------------------------------------------------
 n_stations: 5       # ambulance stations per random fleet placement
-n_repeats: 10       # number of random placements to average over
-ticks_per_run: 1000 # simulation ticks per baseline run
+n_repeats: 30       # number of random placements to average over
+ticks_per_run: 5000 # simulation ticks per baseline run
 headless: true
 
 # ---------------------------------------------------------------------------
 # Simulation parameters (inherits sim_config.yaml defaults where not overridden)
 # ---------------------------------------------------------------------------
 NUM_AMBULANCES: 5
-SIMULATION_TICKS: 1000
+SIMULATION_TICKS: 5000
 TARGET_FPS: 0           # 0 = headless (no display, no frame-rate cap)
 POISSON_LAMBDA: 0.05
 TRAFFIC_ENABLED: true

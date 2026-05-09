@@ -20,8 +20,8 @@ ambulance_seed: 200       # reserved
 # Experiment parameters
 # ---------------------------------------------------------------------------
 n_stations: 5             # must match number of GA-optimised stations
-n_repeats: 10             # must match headless_baseline.yaml n_repeats
-ticks_per_run: 1000       # must match headless_baseline.yaml ticks_per_run
+n_repeats: 30             # must match headless_baseline.yaml n_repeats
+ticks_per_run: 5000       # must match headless_baseline.yaml ticks_per_run
 headless: true
 
 # Optimal station file written by run_genetic_algorithm.py (Sprint 3)
@@ -31,7 +31,7 @@ optimal_stations_path: "outputs/optimal_stations.json"
 # Simulation parameters (identical physics to baseline for fair comparison)
 # ---------------------------------------------------------------------------
 NUM_AMBULANCES: 5
-SIMULATION_TICKS: 1000
+SIMULATION_TICKS: 5000
 TARGET_FPS: 0             # 0 = headless (no display, no frame-rate cap)
 POISSON_LAMBDA: 0.05
 TRAFFIC_ENABLED: true

@@ -62,6 +62,7 @@ class SimulationState:
     current_tick:        int              = 0
     ambulance_positions: dict[int, tuple] = field(default_factory=dict)
     paused:              bool             = False
+    transition_to_demo:  bool             = False
 
 
 # ── Data loaders ───────────────────────────────────────────────────────────────
@@ -300,6 +301,13 @@ def run_simulation(
                     show_traffic  = not show_traffic
                 elif pg_event.key == pygame.K_l:        # Sprint 7 US-028
                     show_log      = not show_log
+                elif pg_event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                    # Launch split-screen demo (Sprint 9 US-035)
+                    logger.info("Transitioning to split-screen demo...")
+                    running = False
+                    # We can't easily call it directly here due to circular imports and 
+                    # pygame display lifecycle. Instead, we signal the caller.
+                    state.transition_to_demo = True
 
         # Simulation tick (skipped while paused)
         if not state.paused:
@@ -322,6 +330,7 @@ def run_simulation(
                 log_buffer     = log_buffer,
                 current_tick   = state.current_tick,
             )
+            pygame.display.flip()
 
         if not headless:
             clock.tick(target_fps if target_fps > 0 else 0)
@@ -331,3 +340,4 @@ def run_simulation(
     dispatcher.metrics_tracker.flush_csv()
     dispatcher.metrics_tracker.export_summary_csv()
     pygame.quit()
+    return state

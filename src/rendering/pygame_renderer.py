@@ -85,14 +85,20 @@ class PygameRenderer:
         # ── Background ─────────────────────────────────────────────────────
         try:
             bg_image   = pygame.image.load(bg_image_path).convert()
+            self.orig_size = bg_image.get_size()
         except (pygame.error, FileNotFoundError):
             bg_image   = pygame.Surface((1, 1))
+            self.orig_size = (1200, 900)  # fallback to standard sim size
+        
         self.padding    = 40
-        sw = screen.get_width()
-        sh = screen.get_height()
-        drawable_w = max(1, sw - 2 * self.padding)
-        drawable_h = max(1, sh - 2 * self.padding)
-        self.background = pygame.transform.scale(bg_image, (drawable_w, drawable_h))
+        sw, sh          = screen.get_size()
+        self.drawable_w = max(1, sw - 2 * self.padding)
+        self.drawable_h = max(1, sh - 2 * self.padding)
+        self.background = pygame.transform.scale(bg_image, (self.drawable_w, self.drawable_h))
+
+        # Coordinate mapping factors
+        self.scale_x = self.drawable_w / self.orig_size[0]
+        self.scale_y = self.drawable_h / self.orig_size[1]
 
         # ── Fonts ──────────────────────────────────────────────────────────
         pygame.font.init()
@@ -106,6 +112,13 @@ class PygameRenderer:
 
         # ── Sprint 6: pulse animation state ───────────────────────────────
         self._pulse_tick = 0
+
+    def _to_screen(self, pos: tuple) -> tuple:
+        """Map raw map coordinates to current screen pixels."""
+        return (
+            int(pos[0] * self.scale_x + self.padding),
+            int(pos[1] * self.scale_y + self.padding)
+        )
 
     # ── Public draw entry point ────────────────────────────────────────────────
 
@@ -154,7 +167,7 @@ class PygameRenderer:
 
         # ── Layer 2: Accident markers ──────────────────────────────────────
         for event in active_events:
-            self._draw_accident(event.pixel_pos)
+            self._draw_accident(self._to_screen(event.pixel_pos))
 
         # ── Layer 3 & 4: Hotspot overlays ─────────────────────────────────
         if show_hotspots and hotspots:
@@ -184,7 +197,6 @@ class PygameRenderer:
         if show_log and log_buffer is not None:
             self._draw_log_history(log_buffer)
 
-        pygame.display.flip()
 
     # ── Layer 1: Traffic heatmap (US-025) ──────────────────────────────────────
 
@@ -197,7 +209,8 @@ class PygameRenderer:
         """
         # Rebuild cache if dirty or not yet created
         if self._traffic_cache is None or self._traffic_cache_dirty:
-            cache = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            sw, sh = self.screen.get_size()
+            cache = pygame.Surface((sw, sh), pygame.SRCALPHA)
             cache.fill((0, 0, 0, 0))
 
             for key, mult in traffic.edge_multipliers.items():
@@ -211,10 +224,11 @@ class PygameRenderer:
                     continue
                 colour = _congestion_colour(mult)
                 # Draw a thicker coloured line under the road
+                p_u = self._to_screen(pos_u)
+                p_v = self._to_screen(pos_v)
                 pygame.draw.line(
                     cache, colour,
-                    (int(pos_u[0]), int(pos_u[1])),
-                    (int(pos_v[0]), int(pos_v[1])),
+                    p_u, p_v,
                     4,
                 )
             self._traffic_cache       = cache
@@ -235,18 +249,19 @@ class PygameRenderer:
             if len(pts) < 3:
                 # Too few points for a proper hull: draw a circle instead
                 if pts:
-                    cx, cy = pts[0]
+                    cx, cy = self._to_screen(pts[0])
                     surf = pygame.Surface((60, 60), pygame.SRCALPHA)
                     pygame.draw.circle(surf, COLOUR_HOTSPOT_FILL, (30, 30), 30)
                     self.screen.blit(surf, (cx - 30, cy - 30))
                 continue
 
-            hull = self._convex_hull(pts)
+            hull = [self._to_screen(p) for p in self._convex_hull(pts)]
             if len(hull) < 3:
                 continue
 
             # Draw filled polygon on alpha surface
-            hull_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            sw, sh = self.screen.get_size()
+            hull_surf = pygame.Surface((sw, sh), pygame.SRCALPHA)
             pygame.draw.polygon(hull_surf, COLOUR_HOTSPOT_FILL, hull)
             pygame.draw.polygon(hull_surf, COLOUR_HOTSPOT_LINE, hull, 2)
             self.screen.blit(hull_surf, (0, 0))
@@ -281,7 +296,7 @@ class PygameRenderer:
         radius = int(10 + pulse * 8)
 
         for hs in hotspots:
-            cx, cy = hs.pixel_pos
+            cx, cy = self._to_screen(hs.pixel_pos)
             # Outer glow ring
             pygame.draw.circle(
                 self.screen,
@@ -317,7 +332,8 @@ class PygameRenderer:
                 if amb.state == AmbulanceState.REBALANCING
                 else DASHED_LINE_COLOUR
             )
-            self._draw_dashed_polyline(self.screen, colour, amb.pixel_polyline)
+            screen_poly = [self._to_screen(p) for p in amb.pixel_polyline]
+            self._draw_dashed_polyline(self.screen, colour, screen_poly)
 
     def _draw_dashed_polyline(
         self, surface: pygame.Surface, colour: tuple, points: list[tuple]
@@ -352,7 +368,7 @@ class PygameRenderer:
     # ── Layer 6: Ambulances ────────────────────────────────────────────────────
 
     def _draw_ambulance(self, amb) -> None:
-        x, y = int(amb.pixel_pos[0]), int(amb.pixel_pos[1])
+        x, y = self._to_screen(amb.pixel_pos)
         if amb.state == AmbulanceState.IDLE:
             colour = COLOUR_IDLE
         elif amb.state == AmbulanceState.IN_TRANSIT:
@@ -409,15 +425,16 @@ class PygameRenderer:
             hud_surf.blit(surf, (12, y_off))
             y_off += 20
 
-        self.screen.blit(hud_surf, (WINDOW_WIDTH - hud_w - 10, 10))
+        self.screen.blit(hud_surf, (self.screen.get_width() - hud_w - 10, 10))
 
     # ── Layer 8: Metrics panel ─────────────────────────────────────────────────
 
     def draw_metrics_panel(self, hud_data: dict, active_count: int = 0) -> None:
         pw = METRICS_PANEL_WIDTH
         ph = METRICS_PANEL_HEIGHT
-        px = (WINDOW_WIDTH  - pw) // 2
-        py = (WINDOW_HEIGHT - ph) // 2
+        sw, sh = self.screen.get_size()
+        px = (sw - pw) // 2
+        py = (sh - ph) // 2
 
         panel = pygame.Surface((pw, ph), pygame.SRCALPHA)
         panel.fill((20, 20, 20, 210))
@@ -464,9 +481,10 @@ class PygameRenderer:
             return
 
         strip_h = len(lines) * 18 + 8
-        strip_y = WINDOW_HEIGHT - strip_h - 4
+        sw, sh  = self.screen.get_size()
+        strip_y = sh - strip_h - 4
 
-        strip = pygame.Surface((WINDOW_WIDTH, strip_h), pygame.SRCALPHA)
+        strip = pygame.Surface((sw, strip_h), pygame.SRCALPHA)
         strip.fill(LOG_STRIP_BG)
 
         for i, line in enumerate(lines):
@@ -481,10 +499,11 @@ class PygameRenderer:
         """Full-screen semi-transparent log overlay (toggled by L key)."""
         all_lines = log_buffer.all()
         # Show the most recent lines that fit
-        max_visible = (WINDOW_HEIGHT - 60) // 17
-        visible = all_lines[-max_visible:] if len(all_lines) > max_visible else all_lines
+        sw, sh      = self.screen.get_size()
+        max_visible = (sh - 60) // 17
+        visible     = all_lines[-max_visible:] if len(all_lines) > max_visible else all_lines
 
-        ow, oh = WINDOW_WIDTH - 60, WINDOW_HEIGHT - 60
+        ow, oh  = sw - 60, sh - 60
         overlay = pygame.Surface((ow, oh), pygame.SRCALPHA)
         overlay.fill((10, 10, 10, 220))
 

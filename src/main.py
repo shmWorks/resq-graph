@@ -40,6 +40,10 @@ from src.simulation.simulation_engine import run_simulation  # noqa: E402
 
 if __name__ == "__main__":
     try:
-        run_simulation()
+        state = run_simulation()
+        if state and getattr(state, "transition_to_demo", False):
+            # Safe local import to avoid circular dependencies
+            from src.split_screen_demo import main as demo_main
+            demo_main()
     except KeyboardInterrupt:
         pass
